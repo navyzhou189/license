@@ -1,0 +1,11 @@
+
+目录分为:
+bin
+conf
+log
+lib
+lib64
+
+
+软件安装路径:
+/var/unis/license/

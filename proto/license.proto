@@ -1,0 +1,72 @@
+
+
+syntax="proto3";
+
+package UnisAlgoLics;
+
+service License {
+	rpc CreateLics(CreateLicsRequest) returns (CreateLicsResponse) {}
+	rpc DeleteLics(DeleteLicsRequest) returns(DeleteLicsResponse) {}
+	rpc QueryLics(QueryLicsRequest) returns (QueryLicsResponse) {}
+	rpc GetAuthAccess(GetAuthAccessRequest) returns (GetAuthAccessResponse) {}
+}
+
+enum LicsType {
+	OD = 0;
+	FACE_PIC = 1;
+	FACE_VIDEO = 2;
+	VAS_PIC = 3;
+	VAS_VIDEO = 4;
+}
+
+
+message CreateLicsRequest {
+	LicsType type = 1;
+	int32 expected = 2;
+}
+
+message CreateLicsResponse {
+	int32 taskId = 1;
+	LicsType type = 2;
+	int32 expected = 3;
+	int32 actual = 4;
+	int32 total = 5;
+	int32 used = 6;
+}
+
+message DeleteLicsRequest {
+	int32 taskId = 1;
+	LicsType type = 2;
+	int32 actual = 3;
+}
+
+message DeleteLicsResponse {
+	int32 taskId = 1;
+	int32 status = 2;
+}
+
+message QueryLicsRequest {
+	LicsType type = 1;
+}
+
+message QuerySet {
+	LicsType type = 1;
+	int32 total = 4;
+	int32 used = 5;
+}
+
+message QueryLicsResponse {
+	LicsType type = 1;
+	int32 total = 2;
+}
+
+message GetAuthAccessRequest {
+	int32 taskId = 1;
+	LicsType type = 2;
+	int32 actual = 3;
+}
+
+message GetAuthAccessResponse {
+	int32 taskId = 1;
+	int32 status = 2;
+}
