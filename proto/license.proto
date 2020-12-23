@@ -9,6 +9,7 @@ service License {
 	rpc DeleteLics(DeleteLicsRequest) returns(DeleteLicsResponse) {}
 	rpc QueryLics(QueryLicsRequest) returns (QueryLicsResponse) {}
 	rpc GetAuthAccess(GetAuthAccessRequest) returns (GetAuthAccessResponse) {}
+	rpc KeepAlive(KeepAliveRequest) returns (KeepAliveResponse) {}
 }
 
 enum LicsType {
@@ -19,6 +20,20 @@ enum LicsType {
 	VAS_VIDEO = 4;
 }
 
+
+message KeepAliveRequest {
+	LicsType type = 1;
+	int32 expected = 2;
+}
+
+message KeepAliveResponse {
+	int32 taskId = 1;
+	LicsType type = 2;
+	int32 expected = 3;
+	int32 actual = 4;
+	int32 total = 5;
+	int32 used = 6;
+}
 
 message CreateLicsRequest {
 	LicsType type = 1;

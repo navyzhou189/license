@@ -27,6 +27,8 @@ using UnisAlgoLics::QueryLicsRequest;
 using UnisAlgoLics::QueryLicsResponse;
 using UnisAlgoLics::GetAuthAccessRequest;
 using UnisAlgoLics::GetAuthAccessResponse;
+using UnisAlgoLics::KeepAliveRequest;
+using UnisAlgoLics::KeepAliveResponse;
 using UnisAlgoLics::License;
 
 
@@ -58,6 +60,13 @@ public:
     Status GetAuthAccess(ServerContext* context, 
                 const GetAuthAccessRequest* request, 
                 GetAuthAccessResponse* response) override {
+        response->set_taskid(400);
+        return Status::OK;
+    }
+
+    Status KeepAlive(ServerContext* context, 
+                const KeepAliveRequest* request, 
+                KeepAliveResponse* response) override {
         response->set_taskid(400);
         return Status::OK;
     }
