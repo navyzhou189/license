@@ -34,44 +34,82 @@ using UnisAlgoLics::License;
 
 class LicsServer final : public License::Service {
 public:
-    Status CreateLics(ServerContext* context, 
-                    const CreateLicsRequest* request, 
-                    CreateLicsResponse* response) override {
-        // TODO: just for test
-        response->set_taskid(100);
-        return Status::OK;
-    }
+LicsServer();
+Status CreateLics(ServerContext* context, 
+                const CreateLicsRequest* request, 
+                CreateLicsResponse* response) override;
+Status DeleteLics(ServerContext* context, 
+                const DeleteLicsRequest* request, 
+                DeleteLicsResponse* response) override;
+Status QueryLics(ServerContext* context, 
+                const QueryLicsRequest* request, 
+                QueryLicsResponse* response) override;
+Status GetAuthAccess(ServerContext* context, 
+            const GetAuthAccessRequest* request, 
+            GetAuthAccessResponse* response) override;
+Status KeepAlive(ServerContext* context, 
+            const KeepAliveRequest* request, 
+            KeepAliveResponse* response) override;
 
+private:
+    long newToken();
 
-    Status DeleteLics(ServerContext* context, 
-                    const DeleteLicsRequest* request, 
-                    DeleteLicsResponse* response) override {
-        response->set_taskid(200);
-        return Status::OK;       
-    }
-
-    Status QueryLics(ServerContext* context, 
-                    const QueryLicsRequest* request, 
-                    QueryLicsResponse* response) override {
-        response->set_total(300);
-        return Status::OK;
-    }
-
-    Status GetAuthAccess(ServerContext* context, 
-                const GetAuthAccessRequest* request, 
-                GetAuthAccessResponse* response) override {
-        response->set_taskid(400);
-        return Status::OK;
-    }
-
-    Status KeepAlive(ServerContext* context, 
-                const KeepAliveRequest* request, 
-                KeepAliveResponse* response) override {
-        response->set_taskid(400);
-        return Status::OK;
-    }
-
+private:
+    long tokenBase_{0};// TODO:: lock contention
 };
+
+LicsServer::LicsServer() {
+    
+}
+
+long LicsServer::newToken() {
+
+    // TODO: add lock
+    tokenBase_++;
+    return tokenBase_;
+}
+
+Status LicsServer::CreateLics(ServerContext* context, 
+                const CreateLicsRequest* request, 
+                CreateLicsResponse* response) {
+    // TODO: just for test
+    // response->set_taskid(100);
+    return Status::OK;
+}
+
+
+Status LicsServer::DeleteLics(ServerContext* context, 
+                const DeleteLicsRequest* request, 
+                DeleteLicsResponse* response) {
+    //response->set_taskid(200);
+    return Status::OK;       
+}
+
+Status LicsServer::QueryLics(ServerContext* context, 
+                const QueryLicsRequest* request, 
+                QueryLicsResponse* response) {
+    //response->set_total(300);
+    return Status::OK;
+}
+
+Status LicsServer::GetAuthAccess(ServerContext* context, 
+            const GetAuthAccessRequest* request, 
+            GetAuthAccessResponse* response) {
+    long token = request->token(); // bug to be fixed:: make sure token is 64bits field.
+
+    // TODO: check if token is exist or not, if exist then reallocted a token for client and print error
+    response->set_token(newToken());
+
+    return Status::OK;
+}
+
+Status LicsServer::KeepAlive(ServerContext* context, 
+            const KeepAliveRequest* request, 
+            KeepAliveResponse* response) {
+    //response->set_taskid(400);
+    return Status::OK;
+}
+
 
 
 class ServerConf {

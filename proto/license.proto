@@ -12,76 +12,99 @@ service License {
 	rpc KeepAlive(KeepAliveRequest) returns (KeepAliveResponse) {}
 }
 
-enum LicsType {
-	OD = 0;
-	FACE_PIC = 1;
-	FACE_VIDEO = 2;
-	VAS_PIC = 3;
-	VAS_VIDEO = 4;
+enum Vendor {
+	UNISINSIGHT = 0;
 }
 
-
-message KeepAliveRequest {
-	LicsType type = 1;
-	int32 expected = 2;
+enum TaskType {
+	PICTURE = 0;
+	VIDEO = 1;
 }
 
-message KeepAliveResponse {
-	int32 taskId = 1;
-	LicsType type = 2;
-	int32 expected = 3;
-	int32 actual = 4;
-	int32 total = 5;
-	int32 used = 6;
+message Algorithm {
+	Vendor vendor = 1;
+	TaskType type = 2;
+	int64 algorithmID = 3; // global and unique id
+}
+
+message AlgoLics {
+	Algorithm algo = 1;
+	int64 requestID = 2; // only used for video task
+	int32 totalLics = 3;
+	int32 usedLics = 4;
 }
 
 message CreateLicsRequest {
-	LicsType type = 1;
-	int32 expected = 2;
+	/*
+	 token is a global and unique id, allocted by server
+	 client initilize the value to -1 before get authrized.
+	*/
+	int64 token = 1;
+	Algorithm algo = 2;
+	int32 clientExpectedLicsNum = 3;
 }
 
 message CreateLicsResponse {
-	int32 taskId = 1;
-	LicsType type = 2;
-	int32 expected = 3;
-	int32 actual = 4;
-	int32 total = 5;
-	int32 used = 6;
+	int64 token = 1;
+	/*
+	requestID is only used for video task, filled up by server.
+	if picture task, filled up with -1.
+	*/
+	int64 requestID = 2; 
+	Algorithm algo = 3;
+	int32 cliengGetActualLicsNum = 4;
 }
 
 message DeleteLicsRequest {
-	int32 taskId = 1;
-	LicsType type = 2;
-	int32 actual = 3;
+	int64 token = 1;
+	int64 requestID = 2; 
+	Algorithm algo = 3;
+	int32 licsNum = 4;
 }
 
 message DeleteLicsResponse {
-	int32 taskId = 1;
-	int32 status = 2;
-}
-
-message QueryLicsRequest {
-	LicsType type = 1;
-}
-
-message QuerySet {
-	LicsType type = 1;
-	int32 total = 4;
-	int32 used = 5;
-}
-
-message QueryLicsResponse {
-	LicsType type = 1;
-	int32 total = 2;
+	int64 token = 1;
+	int64 requestID = 2; 
+	Algorithm algo = 3;
+	int32 licsNum = 4;
 }
 
 message GetAuthAccessRequest {
-	int32 taskId = 1;
-	LicsType type = 2;
-	int32 actual = 3;
+	string ip = 1;
+	int32 port = 2;
+	/*
+	if client is the first time to get access, filled up with -1, 
+	otherwise filled up with  the value which get from  server
+	*/
+	int64 token = 3;
 }
 
 message GetAuthAccessResponse {
-	int32 taskId = 1;
-	int32 status = 2;
+	int64 token = 1;
 }
+
+message KeepAliveRequest {
+	int64 token = 1;
+	repeated AlgoLics lics = 2;
+}
+
+message KeepAliveResponse {
+	int64 token = 1;
+	repeated AlgoLics lics = 2;
+}
+
+
+message QueryLicsRequest {
+	int64 token = 1;
+	int64 requestID = 2; 
+	Algorithm algo = 3;
+}
+
+message QueryLicsResponse {
+	int64 token = 1;
+	int64 requestID = 2; 
+	Algorithm algo = 3;
+	int32 totalLics = 4;
+	int32 usedLics = 5;
+}
+
