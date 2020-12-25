@@ -21,6 +21,12 @@ enum TaskType {
 	VIDEO = 1;
 }
 
+// do not mix user code with grpc error code, so we define it.
+enum RespCode {
+	OK = 0;
+	CLIENT_NOT_EXIST = 1;
+}
+
 message Algorithm {
 	Vendor vendor = 1;
 	TaskType type = 2;
@@ -52,7 +58,8 @@ message CreateLicsResponse {
 	*/
 	int64 requestID = 2; 
 	Algorithm algo = 3;
-	int32 cliengGetActualLicsNum = 4;
+	int32 clientGetActualLicsNum = 4;
+	RespCode respcode = 5;
 }
 
 message DeleteLicsRequest {
@@ -67,6 +74,7 @@ message DeleteLicsResponse {
 	int64 requestID = 2; 
 	Algorithm algo = 3;
 	int32 licsNum = 4;
+	RespCode respcode = 5;
 }
 
 message GetAuthAccessRequest {
@@ -81,6 +89,7 @@ message GetAuthAccessRequest {
 
 message GetAuthAccessResponse {
 	int64 token = 1;
+	RespCode respcode = 2;
 }
 
 message KeepAliveRequest {
@@ -91,6 +100,7 @@ message KeepAliveRequest {
 message KeepAliveResponse {
 	int64 token = 1;
 	repeated AlgoLics lics = 2;
+	RespCode respcode = 3;
 }
 
 
@@ -106,5 +116,6 @@ message QueryLicsResponse {
 	Algorithm algo = 3;
 	int32 totalLics = 4;
 	int32 usedLics = 5;
+	RespCode respcode = 6;
 }
 

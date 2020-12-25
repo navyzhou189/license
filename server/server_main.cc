@@ -30,7 +30,29 @@ using UnisAlgoLics::GetAuthAccessResponse;
 using UnisAlgoLics::KeepAliveRequest;
 using UnisAlgoLics::KeepAliveResponse;
 using UnisAlgoLics::License;
+using UnisAlgoLics::Algorithm;
+using UnisAlgoLics::TaskType;
+using UnisAlgoLics::AlgoLics;
+using UnisAlgoLics::Vendor;
+using UnisAlgoLics::RespCode;
 
+class Client {
+
+public:
+    Client(long token);
+    long GetToken();
+
+private:
+    long clientToken {-1};
+    long timestamp{0};
+public: 
+//TODO
+    std::map<long, std::shared_ptr<AlgoLics>> algo; // key is algorithm id.
+};
+
+Client::Client(long token) : clientToken(token) {
+
+}
 
 class LicsServer final : public License::Service {
 public:
@@ -52,17 +74,18 @@ Status KeepAlive(ServerContext* context,
             KeepAliveResponse* response) override;
 
 private:
-    long newToken();
+    long newClientToken();
 
 private:
     long tokenBase_{0};// TODO:: lock contention
+    std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
 };
 
 LicsServer::LicsServer() {
     
 }
 
-long LicsServer::newToken() {
+long LicsServer::newClientToken() {
 
     // TODO: add lock
     tokenBase_++;
@@ -72,8 +95,42 @@ long LicsServer::newToken() {
 Status LicsServer::CreateLics(ServerContext* context, 
                 const CreateLicsRequest* request, 
                 CreateLicsResponse* response) {
-    // TODO: just for test
-    // response->set_taskid(100);
+    long clientToken = request->token();
+
+    response->set_token(clientToken);
+    response->set_requestid(0);// to be fixed
+    response->mutable_algo()->set_vendor(request->algo().vendor());
+    response->mutable_algo()->set_type(request->algo().type());
+    response->mutable_algo()->set_algorithmid(request->algo().algorithmid());
+
+    // TODO: add lock
+    auto client = clientQ.find(clientToken); // search client
+    if (client != clientQ.end()) {
+
+        response->set_clientgetactuallicsnum(0);
+        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+    } else {
+
+
+        if (request->algo().type() == TaskType::VIDEO) {
+            // search algorithm id
+            auto algo = client->second->algo.find(request->algo().algorithmid());
+            if (algo != client->second->algo.end()) {
+                int freeNum = algo->second->totallics() - algo->second->usedlics();
+                int expectedNum = request->clientexpectedlicsnum();
+                response->set_clientgetactuallicsnum(freeNum >= expectedNum ? expectedNum : freeNum);
+                response->set_respcode(RespCode::OK);
+
+                // TODO update sever license
+            }
+        } else {
+            response->set_clientgetactuallicsnum(0);
+            response->set_respcode(RespCode::OK);
+        }
+
+        
+    }
+
     return Status::OK;
 }
 
@@ -98,7 +155,18 @@ Status LicsServer::GetAuthAccess(ServerContext* context,
     long token = request->token(); // bug to be fixed:: make sure token is 64bits field.
 
     // TODO: check if token is exist or not, if exist then reallocted a token for client and print error
-    response->set_token(newToken());
+    // TODO: add lock
+    auto search = clientQ.find(token);
+    if (search != clientQ.end()) {
+        std::cout << "find a same token client:" << token << std::endl;
+    }
+    long newToken = newClientToken();
+    std::cout << "allocate a new token:" << newToken << std::endl;
+
+    std::shared_ptr<Client> c = std::make_shared<Client>(newToken);
+    clientQ[newToken] = c;
+
+    response->set_token(newToken);
 
     return Status::OK;
 }
@@ -182,7 +250,7 @@ private:
 
 
 void RunServer(const std::string& port) {
-    std::string server_address("0.0.0.0:" + port); // TODO: put server address into a config file.
+    std::string server_address("0.0.0.0:" + port); 
     LicsServer service;
 
     grpc::EnableDefaultHealthCheckService(true);

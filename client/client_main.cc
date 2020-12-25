@@ -145,7 +145,8 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
         // The actual RPC.
         Status status = stub_->CreateLics(&context, req, &resp);
 
-        // Act upon its status.
+        // Act upon its status. 
+        // TODO: function is timeout or other error.
         if (status.ok()) {
             return ELICS_OK;
         } else {
@@ -163,7 +164,7 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
             int used = search->second->usedlics();
             int expectd =  req.clientexpectedlicsnum();
             int actual = (total - used) > expectd ? expectd : total - used;
-            resp.set_clienggetactuallicsnum(actual);
+            resp.set_clientgetactuallicsnum(actual);
 
             search->second->set_usedlics(used + actual);
         }
