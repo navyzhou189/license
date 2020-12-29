@@ -7,7 +7,4 @@
 #define ELICS_OK    (0)
 #define ELICS_NOK   (-1)
 
-
-
-
 #endif

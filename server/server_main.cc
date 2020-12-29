@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <unistd.h>
 
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
@@ -40,18 +41,70 @@ class Client {
 
 public:
     Client(long token);
+    void AddUsedLics(long algoID, int num);
+    void DecUsedLics(long algoID, int num);
     long GetToken();
+    long GetLatestTimestamp();
+    bool Alive();
+    void UpdateTimestamp();
+    void IncFailedCnt();
+    void ClearFailedCnt();
 
 private:
     long clientToken {-1};
     long timestamp{0};
-public: 
-//TODO
-    std::map<long, std::shared_ptr<AlgoLics>> algo; // key is algorithm id.
+    int continusKeepAliveFailedCnt {0};
+    std::map<long, std::shared_ptr<AlgoLics>> algo; // key is algorithm id
 };
 
 Client::Client(long token) : clientToken(token) {
 
+}
+
+void Client::UpdateTimestamp() {
+    // TODO: update timestamp with system;
+}
+
+void Client::IncFailedCnt() {
+    ++continusKeepAliveFailedCnt;
+}
+
+void Client::ClearFailedCnt() {
+    continusKeepAliveFailedCnt = 0;
+}
+
+long Client::GetLatestTimestamp() {
+    return timestamp;
+}
+
+bool Client::Alive() {
+
+    // TODO: read max keep alive from conf
+    if (continusKeepAliveFailedCnt) {
+        return true;
+    }
+
+    return false;
+}
+
+void Client::AddUsedLics(long algoID, int num) {
+    auto search = algo.find(algoID);
+    if (search == algo.end()) {
+        return;
+    }
+
+    int used = search->second->usedlics();
+    search->second->set_usedlics(used + num);
+}
+
+void Client::DecUsedLics(long algoID, int num) {
+    auto search = algo.find(algoID);
+    if (search == algo.end()) {
+        return;
+    }
+
+    int used = search->second->usedlics();
+    search->second->set_usedlics(used - num);
 }
 
 class LicsServer final : public License::Service {
@@ -75,14 +128,97 @@ Status KeepAlive(ServerContext* context,
 
 private:
     long newClientToken();
+    int licsAlloc(long token, long algoID, int expected);
+    int licsFree(long token, long algoID, int expected);
+    void doLoop();
 
 private:
     long tokenBase_{0};// TODO:: lock contention
     std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
+    std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
+    std::atomic<bool> running_{true};
 };
 
 LicsServer::LicsServer() {
     
+}
+
+void LicsServer::doLoop() {
+    while (running_) {
+
+        for (auto& client : clientQ) {
+            if (!client.second->Alive()) {
+                // delete client and release used lics
+            }
+
+            // check if the client keep alive
+            long clientTime = client.second->GetLatestTimestamp();
+            long sysTime = 0;// bug to be fixed
+            long diff = sysTime >= clientTime ? sysTime - clientTime : 0; // TODO: mark the client died if sysTime < clientTime.
+            // TODO: get timeout from conf
+            if (diff > 30) {
+                // make the continusKeepAliveFailedCnt plus plus
+                client.second->IncFailedCnt();
+            }
+        }
+
+
+        // TODO: call vcloud api to update license.
+
+
+        // TODO: get interval from conf
+        sleep(1);
+
+    }
+}
+
+int LicsServer::licsAlloc(long token, long algoID, int expected) {
+
+    // add lock
+    auto client = clientQ.find(token); // search client
+    if (client == clientQ.end()) {
+        // TODO: add log print
+        return 0;
+    }
+
+    auto algo = licenseQ.find(algoID);
+    if (algo == licenseQ.end()) {
+        // TODO: add log print
+        return 0;
+    }
+
+    int total = algo->second->totallics();
+    int used = algo->second->usedlics();
+
+    int actualAllocedLics = (total - used) >= expected ? expected : (total - used);
+    algo->second->set_usedlics(used + actualAllocedLics);// update used licenses for algorithm
+    client->second->AddUsedLics(algoID, actualAllocedLics); // update used licenses for client
+
+    return actualAllocedLics;
+}
+
+int LicsServer::licsFree(long token, long algoID, int expected) { 
+
+    // add lock
+    auto client = clientQ.find(token); // search client
+    if (client == clientQ.end()) {
+        // TODO: add log print
+        return 0;
+    }
+
+    auto algo = licenseQ.find(algoID);
+    if (algo == licenseQ.end()) {
+        // TODO: add log print
+        return 0;
+    }
+
+    int used = algo->second->usedlics();
+
+    int actualFreeLics = used >= expected ? expected : used;
+    algo->second->set_usedlics(used - actualFreeLics);// update used licenses for algorithm
+    client->second->DecUsedLics(algoID, actualFreeLics); // update used licenses for client
+
+    return actualFreeLics;
 }
 
 long LicsServer::newClientToken() {
@@ -104,33 +240,10 @@ Status LicsServer::CreateLics(ServerContext* context,
     response->mutable_algo()->set_algorithmid(request->algo().algorithmid());
 
     // TODO: add lock
-    auto client = clientQ.find(clientToken); // search client
-    if (client != clientQ.end()) {
-
-        response->set_clientgetactuallicsnum(0);
-        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
-    } else {
-
-
-        if (request->algo().type() == TaskType::VIDEO) {
-            // search algorithm id
-            auto algo = client->second->algo.find(request->algo().algorithmid());
-            if (algo != client->second->algo.end()) {
-                int freeNum = algo->second->totallics() - algo->second->usedlics();
-                int expectedNum = request->clientexpectedlicsnum();
-                response->set_clientgetactuallicsnum(freeNum >= expectedNum ? expectedNum : freeNum);
-                response->set_respcode(RespCode::OK);
-
-                // TODO update sever license
-            }
-        } else {
-            response->set_clientgetactuallicsnum(0);
-            response->set_respcode(RespCode::OK);
-        }
-
-        
-    }
-
+    int licsNum = licsAlloc(clientToken, request->algo().algorithmid(), request->clientexpectedlicsnum());
+    response->set_clientgetactuallicsnum(licsNum);
+    response->set_respcode(RespCode::OK);
+    
     return Status::OK;
 }
 
@@ -138,7 +251,19 @@ Status LicsServer::CreateLics(ServerContext* context,
 Status LicsServer::DeleteLics(ServerContext* context, 
                 const DeleteLicsRequest* request, 
                 DeleteLicsResponse* response) {
-    //response->set_taskid(200);
+    long clientToken = request->token();
+
+    response->set_token(clientToken);
+    response->set_requestid(0);// to be fixed
+    response->mutable_algo()->set_vendor(request->algo().vendor());
+    response->mutable_algo()->set_type(request->algo().type());
+    response->mutable_algo()->set_algorithmid(request->algo().algorithmid());
+
+    // TODO: add lock
+    int licsNum = licsFree(clientToken, request->algo().algorithmid(), request->licsnum());
+    response->set_licsnum(licsNum);
+    response->set_respcode(RespCode::OK);
+
     return Status::OK;       
 }
 
@@ -167,6 +292,7 @@ Status LicsServer::GetAuthAccess(ServerContext* context,
     clientQ[newToken] = c;
 
     response->set_token(newToken);
+    response->set_respcode(RespCode::OK);
 
     return Status::OK;
 }
@@ -174,7 +300,23 @@ Status LicsServer::GetAuthAccess(ServerContext* context,
 Status LicsServer::KeepAlive(ServerContext* context, 
             const KeepAliveRequest* request, 
             KeepAliveResponse* response) {
-    //response->set_taskid(400);
+    // check if client exist
+    long clientToken = request->token();
+
+    response->set_token(clientToken);
+
+    // TODO: add lock
+    auto client = clientQ.find(clientToken);
+    if (client == clientQ.end()) {
+        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+    }
+
+    // TODO: allocte licence for picture
+
+    // update client timestamp
+    client->second->UpdateTimestamp();
+
+    response->set_respcode(RespCode::OK);
     return Status::OK;
 }
 
@@ -235,8 +377,6 @@ private:
         }
         key = trim(line.substr(0, pos)); // substr return a [pos, pos + count) substring
         value = trim(line.substr(pos + 1, line.length()));
-
-        
 
         conf_[key] = value;
 
