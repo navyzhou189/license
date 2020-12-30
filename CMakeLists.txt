@@ -65,9 +65,12 @@ message("get value of _REFLECTION is :"  ${_REFLECTION})
 set(LOGGER "spdlog::spdlog")
 add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog)
 
-set(ClientTarget "LicenseClient")
-set(ClientSrc "client/client_main.cc")
-add_executable(${ClientTarget} ${ClientSrc} 
+set(ClientTarget "TestLicenseClient")
+set(ClientTestMain "test/client_test.cc")
+set(ClientSrc "src/client.cc")
+add_executable(${ClientTarget} 
+    ${ClientSrc} 
+    ${ClientTestMain}
     ${license_proto_srcs} 
     ${license_grpc_srcs})
 target_link_libraries(${ClientTarget}
@@ -78,7 +81,7 @@ target_link_libraries(${ClientTarget}
 
 
 set(ServerTarget "LicenseServer")
-set(ServerSrc "server/server_main.cc")
+set(ServerSrc "src/server.cc")
 add_executable(${ServerTarget} ${ServerSrc} 
     ${license_proto_srcs} 
     ${license_grpc_srcs})
@@ -88,5 +91,4 @@ target_link_libraries(${ServerTarget}
     ${_PROTOBUF_LIBPROTOBUF}
     ${LOGGER})
 
-#target_include_directories(ServerTarget PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/spdlog/include)
 

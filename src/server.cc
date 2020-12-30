@@ -1,66 +1,6 @@
-
-#include <iostream>
-#include <fstream>
-#include <memory>
-#include <string>
-#include <map>
-#include <unistd.h>
-#include <thread>
-
-#include <grpcpp/grpcpp.h>
-#include <grpcpp/health_check_service_interface.h>
-#include <grpcpp/ext/proto_server_reflection_plugin.h>
-
-#include "license.grpc.pb.h"
-#include "lics_error.h"
-
-#include "spdlog/spdlog.h"
-#include "spdlog/cfg/env.h"
-#include "spdlog/sinks/rotating_file_sink.h"
+#include "server.h"
 
 #define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
-
-using grpc::Server;
-using grpc::Channel;
-using grpc::ServerContext;
-using grpc::ServerBuilder;
-using grpc::Status;
-using UnisAlgoLics::CreateLicsRequest;
-using UnisAlgoLics::CreateLicsResponse;
-using UnisAlgoLics::DeleteLicsRequest;
-using UnisAlgoLics::DeleteLicsResponse;
-using UnisAlgoLics::QueryLicsRequest;
-using UnisAlgoLics::QueryLicsResponse;
-using UnisAlgoLics::GetAuthAccessRequest;
-using UnisAlgoLics::GetAuthAccessResponse;
-using UnisAlgoLics::KeepAliveRequest;
-using UnisAlgoLics::KeepAliveResponse;
-using UnisAlgoLics::License;
-using UnisAlgoLics::Algorithm;
-using UnisAlgoLics::TaskType;
-using UnisAlgoLics::AlgoLics;
-using UnisAlgoLics::Vendor;
-using UnisAlgoLics::RespCode;
-
-class Client {
-
-public:
-    Client(long token);
-    void AddUsedLics(long algoID, int num);
-    void DecUsedLics(long algoID, int num);
-    long GetToken();
-    long GetLatestTimestamp();
-    bool Alive();
-    void UpdateTimestamp();
-    void IncFailedCnt();
-    void ClearFailedCnt();
-
-private:
-    long clientToken {-1};
-    long timestamp{0};
-    int continusKeepAliveFailedCnt {0};
-    std::map<long, std::shared_ptr<AlgoLics>> algo; // key is algorithm id
-};
 
 Client::Client(long token) : clientToken(token) {
 
@@ -451,7 +391,7 @@ int main(int argc, char** argv)
     auto log = spdlog::rotating_logger_mt("server", conf.GetItem("log"), 1048576 * 5, 3);
     log->flush_on(spdlog::level::info); //set flush policy 
     spdlog::set_default_logger(log); // set log to be defalut 
-    spdlog::set_pattern("[source %s] [function %!] [line %#] %v");    
+    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v");    
 
     std::string port = conf.GetItem("port");
     RunServer(port);
