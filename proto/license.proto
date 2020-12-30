@@ -38,6 +38,7 @@ message AlgoLics {
 	int64 requestID = 2; // only used for video task
 	int32 totalLics = 3;
 	int32 usedLics = 4;
+	int32 maxLimit = 5;
 }
 
 message CreateLicsRequest {

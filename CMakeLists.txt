@@ -30,7 +30,8 @@ set(_GRPC_GRPCPP gRPC::grpc++)
 
 find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
 
-
+# log
+set(LOGGER spdlog::spdlog_header_only)
 
 # Proto file
 get_filename_component(license_proto "proto/license.proto" ABSOLUTE)
@@ -61,6 +62,9 @@ include_directories(include)
 
 message("get value of _REFLECTION is :"  ${_REFLECTION})
 
+set(LOGGER "spdlog::spdlog")
+add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog)
+
 set(ClientTarget "LicenseClient")
 set(ClientSrc "client/client_main.cc")
 add_executable(${ClientTarget} ${ClientSrc} 
@@ -69,7 +73,9 @@ add_executable(${ClientTarget} ${ClientSrc}
 target_link_libraries(${ClientTarget}
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
-    ${_PROTOBUF_LIBPROTOBUF})
+    ${_PROTOBUF_LIBPROTOBUF}
+    ${LOGGER})
+
 
 set(ServerTarget "LicenseServer")
 set(ServerSrc "server/server_main.cc")
@@ -79,7 +85,8 @@ add_executable(${ServerTarget} ${ServerSrc}
 target_link_libraries(${ServerTarget}
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
-    ${_PROTOBUF_LIBPROTOBUF})
+    ${_PROTOBUF_LIBPROTOBUF}
+    ${LOGGER})
 
-
+#target_include_directories(ServerTarget PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/spdlog/include)
 

@@ -5,6 +5,7 @@
 #include <string>
 #include <map>
 #include <unistd.h>
+#include <thread>
 
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
@@ -13,7 +14,11 @@
 #include "license.grpc.pb.h"
 #include "lics_error.h"
 
-#define SERVER_CONF_FILE   ("/var/unis/license/conf/server.conf")
+#include "spdlog/spdlog.h"
+#include "spdlog/cfg/env.h"
+#include "spdlog/sinks/rotating_file_sink.h"
+
+#define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
 
 using grpc::Server;
 using grpc::Channel;
@@ -110,6 +115,9 @@ void Client::DecUsedLics(long algoID, int num) {
 class LicsServer final : public License::Service {
 public:
 LicsServer();
+
+void Shutdown();
+
 Status CreateLics(ServerContext* context, 
                 const CreateLicsRequest* request, 
                 CreateLicsResponse* response) override;
@@ -140,7 +148,13 @@ private:
 };
 
 LicsServer::LicsServer() {
-    
+    std::thread t(&LicsServer::doLoop, this);
+    t.detach();
+}
+
+void LicsServer::Shutdown() {
+    running_ = false;
+    // TODO: sleep for a delay to shutdown server.
 }
 
 void LicsServer::doLoop() {
@@ -187,6 +201,7 @@ int LicsServer::licsAlloc(long token, long algoID, int expected) {
         return 0;
     }
 
+    // get total and used lics by algorithm id
     int total = algo->second->totallics();
     int used = algo->second->usedlics();
 
@@ -232,6 +247,11 @@ Status LicsServer::CreateLics(ServerContext* context,
                 const CreateLicsRequest* request, 
                 CreateLicsResponse* response) {
     long clientToken = request->token();
+    auto client = clientQ.find(clientToken);
+    if (client == clientQ.end()) {
+        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+        return Status::OK;
+    }
 
     response->set_token(clientToken);
     response->set_requestid(0);// to be fixed
@@ -252,6 +272,11 @@ Status LicsServer::DeleteLics(ServerContext* context,
                 const DeleteLicsRequest* request, 
                 DeleteLicsResponse* response) {
     long clientToken = request->token();
+    auto client = clientQ.find(clientToken);
+    if (client == clientQ.end()) {
+        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+        return Status::OK;
+    }
 
     response->set_token(clientToken);
     response->set_requestid(0);// to be fixed
@@ -283,10 +308,10 @@ Status LicsServer::GetAuthAccess(ServerContext* context,
     // TODO: add lock
     auto search = clientQ.find(token);
     if (search != clientQ.end()) {
-        std::cout << "find a same token client:" << token << std::endl;
+        SPDLOG_INFO("find a same token client:{0}", token);
     }
     long newToken = newClientToken();
-    std::cout << "allocate a new token:" << newToken << std::endl;
+    SPDLOG_INFO("allocate a new token:{0}", newToken);
 
     std::shared_ptr<Client> c = std::make_shared<Client>(newToken);
     clientQ[newToken] = c;
@@ -309,9 +334,18 @@ Status LicsServer::KeepAlive(ServerContext* context,
     auto client = clientQ.find(clientToken);
     if (client == clientQ.end()) {
         response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+        return Status::OK;
     }
 
     // TODO: allocte licence for picture
+    for (int idx = 0; idx < request->lics_size(); ++idx ) {
+        if (request->lics(idx).algo().type() == TaskType::PICTURE) {
+            int clientMaxLimit = request->lics(idx).maxlimit();
+
+            // TODO: allocate stragy
+            response->add_lics()->set_maxlimit(clientMaxLimit);
+        }
+    }
 
     // update client timestamp
     client->second->UpdateTimestamp();
@@ -335,7 +369,7 @@ public:
             }
             confFile.close();
         } else {
-            std::cout << "failed to open file:" << file << std::endl;
+            SPDLOG_ERROR("failed to open file:{0}", file);
             abort();
         }
 
@@ -403,7 +437,7 @@ void RunServer(const std::string& port) {
     builder.RegisterService(&service);
     // Finally assemble the server.
     std::unique_ptr<Server> server(builder.BuildAndStart());
-    std::cout << "Server listening on " << server_address << std::endl;
+    SPDLOG_INFO("Server listening on {0}", server_address);
 
     // Wait for the server to shutdown. Note that some other thread must be
     // responsible for shutting down the server for this call to ever return.
@@ -413,6 +447,11 @@ void RunServer(const std::string& port) {
 int main(int argc, char** argv)
 {
     ServerConf conf(SERVER_CONF_FILE);
+
+    auto log = spdlog::rotating_logger_mt("server", conf.GetItem("log"), 1048576 * 5, 3);
+    log->flush_on(spdlog::level::info); //set flush policy 
+    spdlog::set_default_logger(log); // set log to be defalut 
+    spdlog::set_pattern("[source %s] [function %!] [line %#] %v");    
 
     std::string port = conf.GetItem("port");
     RunServer(port);

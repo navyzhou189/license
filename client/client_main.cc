@@ -8,6 +8,7 @@
 #include <string>
 #include <map>
 #include <grpcpp/grpcpp.h>
+#include <unistd.h>
 #include "license.grpc.pb.h"
 #include "lics_error.h"
 
@@ -86,11 +87,15 @@ private:
 };
 
 LicsClient::~LicsClient() {
+    running_= false;
+    sleep(1); // sleep for a delay to exit doLoop thread.
 }
 
 LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     : stub_(License::NewStub(channel)) {
     // TODO: start a doLoop thread
+    std::thread t(&LicsClient::doLoop, this);
+    t.detach();
 
 
     // load all license into cache, depend by vendor
@@ -250,6 +255,9 @@ int LicsClient::keepAlive() {
     KeepAliveRequest req;
     KeepAliveResponse resp;
     ClientContext context;
+
+    // TODO: set client maximum limit
+    //req.set_maxlimit(100);
     Status status = stub_->KeepAlive(&context, req, &resp);
 
     // TODO: parse the response, 
@@ -299,7 +307,7 @@ void LicsClient::doLoop() {
     while (running_) {
 
         // send authentication request to license server
-        if (!getAuthAccess()) {
+        if (!getAuthAccess()) { // bug to be fixed: make getAuthAcess being automical operation
             // TODO: sleep strategy
             continue;
         }
@@ -331,7 +339,7 @@ void LicsClient::doLoop() {
             
 
             // TODO: sleep strategy
-
+            sleep(1);
         }
     }
 }
