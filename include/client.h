@@ -16,6 +16,10 @@
 #include "license.grpc.pb.h"
 #include "lics_error.h"
 
+#include "spdlog/spdlog.h"
+#include "spdlog/cfg/env.h"
+#include "spdlog/sinks/rotating_file_sink.h"
+
 /*
     NOTICES:
     algorithm id is very important, id depend by vendor.
@@ -59,7 +63,7 @@ public:
     void QueryLics();
 
 private:
-    bool getAuthAccess();
+    int getAuthAccess();
     int keepAlive();
     void doLoop();
     std::shared_ptr<LicsEvent> dequeue(); // TODO: make LicsEvent to be  a template

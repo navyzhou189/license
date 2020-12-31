@@ -41,7 +41,6 @@ using UnisAlgoLics::Algorithm;
 using UnisAlgoLics::TaskType;
 using UnisAlgoLics::AlgoLics;
 using UnisAlgoLics::Vendor;
-using UnisAlgoLics::RespCode;
 
 class Client {
 

@@ -189,7 +189,7 @@ Status LicsServer::CreateLics(ServerContext* context,
     long clientToken = request->token();
     auto client = clientQ.find(clientToken);
     if (client == clientQ.end()) {
-        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+        response->set_respcode(ELICS_CLIENT_NOT_EXIST);
         return Status::OK;
     }
 
@@ -202,7 +202,7 @@ Status LicsServer::CreateLics(ServerContext* context,
     // TODO: add lock
     int licsNum = licsAlloc(clientToken, request->algo().algorithmid(), request->clientexpectedlicsnum());
     response->set_clientgetactuallicsnum(licsNum);
-    response->set_respcode(RespCode::OK);
+    response->set_respcode(ELICS_OK);
     
     return Status::OK;
 }
@@ -214,7 +214,7 @@ Status LicsServer::DeleteLics(ServerContext* context,
     long clientToken = request->token();
     auto client = clientQ.find(clientToken);
     if (client == clientQ.end()) {
-        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+        response->set_respcode(ELICS_CLIENT_NOT_EXIST);
         return Status::OK;
     }
 
@@ -227,7 +227,7 @@ Status LicsServer::DeleteLics(ServerContext* context,
     // TODO: add lock
     int licsNum = licsFree(clientToken, request->algo().algorithmid(), request->licsnum());
     response->set_licsnum(licsNum);
-    response->set_respcode(RespCode::OK);
+    response->set_respcode(ELICS_OK);
 
     return Status::OK;       
 }
@@ -257,7 +257,7 @@ Status LicsServer::GetAuthAccess(ServerContext* context,
     clientQ[newToken] = c;
 
     response->set_token(newToken);
-    response->set_respcode(RespCode::OK);
+    response->set_respcode(ELICS_OK);
 
     return Status::OK;
 }
@@ -273,7 +273,7 @@ Status LicsServer::KeepAlive(ServerContext* context,
     // TODO: add lock
     auto client = clientQ.find(clientToken);
     if (client == clientQ.end()) {
-        response->set_respcode(RespCode::CLIENT_NOT_EXIST);
+        response->set_respcode(ELICS_CLIENT_NOT_EXIST);
         return Status::OK;
     }
 
@@ -290,7 +290,7 @@ Status LicsServer::KeepAlive(ServerContext* context,
     // update client timestamp
     client->second->UpdateTimestamp();
 
-    response->set_respcode(RespCode::OK);
+    response->set_respcode(ELICS_OK);
     return Status::OK;
 }
 

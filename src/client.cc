@@ -5,8 +5,20 @@ LicsClient::~LicsClient() {
     sleep(1); // sleep for a delay to exit doLoop thread.
 }
 
+
+std::atomic<bool> logStartup{false};
 LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     : stub_(License::NewStub(channel)) {
+    
+    if (!logStartup) {
+        logStartup = true;
+        auto log = spdlog::rotating_logger_mt("client", "/var/unis/license/client/log/log.txt", 1048576 * 5, 3);
+        log->flush_on(spdlog::level::info); //set flush policy 
+        spdlog::set_default_logger(log); // set log to be defalut 
+        spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v"); 
+    }
+
+
     // TODO: start a doLoop thread
     std::thread t(&LicsClient::doLoop, this);
     t.detach();
@@ -45,12 +57,13 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
 
 int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
     if (!connected_) {
-        std::cout << "disconnected to license server, connecting to license server..." << std::endl;
-        if (!getAuthAccess()) {
-            std::cout << "failed to connect to license server: CreateLics" << std::endl;
-            return ELICS_NOK;
+        SPDLOG_INFO("disconnected to license server, connecting to license server...");
+        int ret = getAuthAccess();
+        if (ELICS_OK != ret) {
+            SPDLOG_INFO("failed to connect to license server: CreateLics({0})", ret);
+            return ret;
         }
-        std::cout << "connected to license server: ok" << std::endl;
+        SPDLOG_INFO("connected to license server: ok");
     }
 
    if (req.algo().type() == TaskType::VIDEO) {
@@ -69,9 +82,8 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
         if (status.ok()) {
             return ELICS_OK;
         } else {
-            std::cout << status.error_code() << ": " << status.error_message()
-                        << std::endl;
-            return ELICS_NOK;
+            SPDLOG_INFO("CreateLics({0}):{1}", status.error_code(), status.error_message());
+            return status.error_code();
         }
     }
 
@@ -89,17 +101,18 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
         }
     }
 
-    return ELICS_NOK;   
+    return ELICS_UNKOWN_ERROR;   
 }
 
 int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
     if (!connected_) {
-        std::cout << "disconnected to license server, connecting to license server..." << std::endl;
-        if (!getAuthAccess()) {
-            std::cout << "failed to connect to license server: DeleteLics" << std::endl;
-            return ELICS_NOK;
+        SPDLOG_INFO("disconnected to license server, connecting to license server...");
+        int ret = getAuthAccess();
+        if (ELICS_OK != ret) {
+            SPDLOG_INFO("failed to connect to license server: DeleteLics({0})", ret);
+            return ret;
         }
-        std::cout << "connected to license server: ok" << std::endl;
+        SPDLOG_INFO("connected to license server: ok");
     }
 
     
@@ -110,9 +123,8 @@ int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
         if (status.ok()) {
             return ELICS_OK;
         } else {
-            std::cout << status.error_code() << ": " << status.error_message()
-                        << std::endl;
-            return ELICS_NOK;
+            SPDLOG_INFO("DeleteLics({0}):{1}", status.error_code(), status.error_message());
+            return status.error_code();
         }
     }
 
@@ -127,17 +139,18 @@ int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
         }
     }
 
-    return ELICS_NOK; 
+    return ELICS_UNKOWN_ERROR; 
 }
 
 void LicsClient::QueryLics() {
     if (!connected_) {
-        std::cout << "disconnected to license server, connecting to license server..." << std::endl;
-        if (!getAuthAccess()) {
-            std::cout << "failed to connect to license server: QueryLics" << std::endl;
-            return;
+        SPDLOG_INFO("disconnected to license server, connecting to license server...");
+        int ret = getAuthAccess();
+        if (ELICS_OK != ret) {
+            SPDLOG_INFO("failed to connect to license server: QueryLics({0})", ret);
+            return; // TODO: throw error
         }
-        std::cout << "connected to license server: ok" << std::endl;
+        SPDLOG_INFO("connected to license server: ok");
     }
 
     QueryLicsRequest req;
@@ -150,18 +163,18 @@ long LicsClient::getToken() {
     return token_;
 }
 
-bool LicsClient::getAuthAccess() {
+int LicsClient::getAuthAccess() {
     GetAuthAccessRequest req;
     req.set_token(getToken());
     GetAuthAccessResponse resp;
     ClientContext context;
     Status status = stub_->GetAuthAccess(&context, req, &resp);
     if (status.ok()) {
-        std::cout << " get accessed token:" << resp.token() << "  ok" << std::endl;
-        return true;
+        SPDLOG_INFO(" get accessed token: {0} ok", resp.token());
+        return resp.respcode();
     }
 
-    return false;
+    return status.error_code();
 }
 
 
@@ -179,7 +192,7 @@ int LicsClient::keepAlive() {
         return ELICS_OK;
     }
 
-    return ELICS_NOK;
+    return ELICS_UNKOWN_ERROR;
 }
 
 bool LicsClient::empty() {
@@ -221,7 +234,7 @@ void LicsClient::doLoop() {
     while (running_) {
 
         // send authentication request to license server
-        if (!getAuthAccess()) { // bug to be fixed: make getAuthAcess being automical operation
+        if (ELICS_OK != getAuthAccess()) { // bug to be fixed: make getAuthAcess being automical operation
             // TODO: sleep strategy
             continue;
         }
@@ -236,7 +249,7 @@ void LicsClient::doLoop() {
             // TODO: send keepavlie request to license server with license cache.
             int ret = keepAlive();
             if (ret != ELICS_OK) {
-                std::cout << "keepAlive has a error:" << ret << std::endl;
+                SPDLOG_ERROR("keepAlive has a error: {0}", ret);
                 connected_ = false; // bug to be fixed
                 break;
             }

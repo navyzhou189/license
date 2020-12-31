@@ -5,13 +5,17 @@ add p4 t4 3559 ec
 signal control
 
 
-cpplint
-
-log library: spdlog
-
 gtest
 
 产品化
 
 配置区分是第三方还是微云、极云
+
+代码规范检查：
+cpplint
+
+测试：
+- 单元测试
+- 性能测试
+- 内存测试
 

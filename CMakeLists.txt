@@ -8,38 +8,32 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11")
 
 find_package(Threads REQUIRED)
 
-
-
-# Find Protobuf installation
-# Looks for protobuf-config.cmake file installed by Protobuf's cmake installation.
-set(protobuf_MODULE_COMPATIBLE TRUE)
+# find protobuf installation
 find_package(Protobuf CONFIG REQUIRED)
 message(STATUS "Using protobuf ${Protobuf_VERSION}")
 
-find_program(_PROTOBUF_PROTOC protoc)
 
-set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
-set(_REFLECTION gRPC::grpc++_reflection)
+# cause cmake version below 3.19.x don't stop when it found no program, we need to check failed error manufatually.
+find_program(_PROTOBUF_PROTOC protoc REQUIRED)
+if (${_PROTOBUF_PROTOC} STREQUAL "_PROTOBUF_PROTOC-NOTFOUND")
+    message(FATAL_ERROR "No Found program:protoc")
+endif()
+
+find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
+if (${_GRPC_CPP_PLUGIN_EXECUTABLE} STREQUAL "_GRPC_CPP_PLUGIN_EXECUTABLE-NOTFOUND")
+    message(FATAL_ERROR "No Found program:grpc_cpp_plugin")
+endif()
 
 # Find gRPC installation
-# Looks for gRPCConfig.cmake file installed by gRPC's cmake installation.
 find_package(gRPC CONFIG REQUIRED)
 message(STATUS "Using gRPC ${gRPC_VERSION}")
 
-set(_GRPC_GRPCPP gRPC::grpc++)
 
-find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
-
-# log
-set(LOGGER spdlog::spdlog_header_only)
-
-# Proto file
+# proto file
 get_filename_component(license_proto "proto/license.proto" ABSOLUTE)
 get_filename_component(license_proto_path "${license_proto}" PATH)
 
-
-
-# Generated sources
+# generate protobuf files
 set(license_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/license.pb.cc")
 set(license_proto_headers "${CMAKE_CURRENT_BINARY_DIR}/license.pb.h")
 set(license_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/license.grpc.pb.cc")
@@ -56,14 +50,19 @@ add_custom_command(
 
 # Include generated *.pb.h files
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
-message("CMAKE_CURRENT_BINARY_DIR is " ${CMAKE_CURRENT_BINARY_DIR})
-include_directories(include)
+# Include other dependency header files
+include_directories("${CMAKE_SOURCE_DIR}/include")
 
-
-message("get value of _REFLECTION is :"  ${_REFLECTION})
-
-set(LOGGER "spdlog::spdlog")
+# compile 3rdparty into static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog)
+add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/googletest)
+
+# set dependency library  
+set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
+set(_REFLECTION gRPC::grpc++_reflection)
+set(_GRPC_GRPCPP gRPC::grpc++)
+set(LOGGER "spdlog::spdlog")
+set(GTEST "gtest")
 
 set(ClientTarget "TestLicenseClient")
 set(ClientTestMain "test/client_test.cc")
@@ -77,7 +76,8 @@ target_link_libraries(${ClientTarget}
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF}
-    ${LOGGER})
+    ${LOGGER}
+    ${GTEST})
 
 
 set(ServerTarget "LicenseServer")
