@@ -71,6 +71,7 @@ private:
     bool empty();
 
     long getToken();
+    void setToken(long token);
 
 private:
     long token_{-1};

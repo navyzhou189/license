@@ -17,9 +17,7 @@
 #include "license.grpc.pb.h"
 #include "lics_error.h"
 
-#include "spdlog/spdlog.h"
-#include "spdlog/cfg/env.h"
-#include "spdlog/sinks/rotating_file_sink.h"
+
 
 using grpc::Server;
 using grpc::Channel;
@@ -52,8 +50,9 @@ public:
     long GetLatestTimestamp();
     bool Alive();
     void UpdateTimestamp();
-    void IncFailedCnt();
-    void ClearFailedCnt();
+    int HeartbeatTimeoutCnt();
+    void IncHeartbeatTimeoutCnt();
+    void ZeroHeartbeatTimeoutCnt();
 
 private:
     long clientToken {-1};

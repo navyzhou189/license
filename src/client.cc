@@ -23,6 +23,8 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     std::thread t(&LicsClient::doLoop, this);
     t.detach();
 
+    sleep(1);// have doLoop ready to handle all event.
+
 
     // load all license into cache, depend by vendor
     std::shared_ptr<AlgoLics> odLics = std::make_shared<AlgoLics>();
@@ -57,13 +59,9 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
 
 int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
     if (!connected_) {
-        SPDLOG_INFO("disconnected to license server, connecting to license server...");
-        int ret = getAuthAccess();
-        if (ELICS_OK != ret) {
-            SPDLOG_INFO("failed to connect to license server: CreateLics({0})", ret);
-            return ret;
-        }
-        SPDLOG_INFO("connected to license server: ok");
+        SPDLOG_INFO("disconnected to license server, please wait and retry...");
+        // TODO: trigger an event to keepalive thread and reconnect to license server.
+        return ELICS_NET_DISCONNECTED;
     }
 
    if (req.algo().type() == TaskType::VIDEO) {
@@ -105,18 +103,13 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
 }
 
 int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
-    if (!connected_) {
-        SPDLOG_INFO("disconnected to license server, connecting to license server...");
-        int ret = getAuthAccess();
-        if (ELICS_OK != ret) {
-            SPDLOG_INFO("failed to connect to license server: DeleteLics({0})", ret);
-            return ret;
+    if (req.algo().type() == TaskType::VIDEO) {
+        if (!connected_) {
+            SPDLOG_INFO("disconnected to license server, please wait and retry...");
+            // TODO: trigger an event to keepalive thread and reconnect to license server.
+            return ELICS_NET_DISCONNECTED;
         }
-        SPDLOG_INFO("connected to license server: ok");
-    }
 
-    
-   if (req.algo().type() == TaskType::VIDEO) {
         req.set_token(getToken());
         ClientContext context;
         Status status = stub_->DeleteLics(&context, req, &resp);
@@ -124,7 +117,7 @@ int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
             return ELICS_OK;
         } else {
             SPDLOG_INFO("DeleteLics({0}):{1}", status.error_code(), status.error_message());
-            return status.error_code();
+            return status.error_code();// app need to handle this error
         }
     }
 
@@ -142,25 +135,25 @@ int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
     return ELICS_UNKOWN_ERROR; 
 }
 
-void LicsClient::QueryLics() {
-    if (!connected_) {
-        SPDLOG_INFO("disconnected to license server, connecting to license server...");
-        int ret = getAuthAccess();
-        if (ELICS_OK != ret) {
-            SPDLOG_INFO("failed to connect to license server: QueryLics({0})", ret);
-            return; // TODO: throw error
-        }
-        SPDLOG_INFO("connected to license server: ok");
-    }
+// int LicsClient::QueryLics() {
+//     if (!connected_) {
+//         SPDLOG_INFO("disconnected to license server, please wait and retry...");
+//         // TODO: trigger an event to keepalive thread and reconnect to license server.
+//         return ELICS_NET_DISCONNECTED;
+//     }
 
-    QueryLicsRequest req;
-    QueryLicsResponse resp;
-    ClientContext context;
-    Status status = stub_->QueryLics(&context, req, &resp);
-}
+//     QueryLicsRequest req;
+//     QueryLicsResponse resp;
+//     ClientContext context;
+//     Status status = stub_->QueryLics(&context, req, &resp);
+// }
 
 long LicsClient::getToken() {
     return token_;
+}
+
+void LicsClient::setToken(long token) {
+    token_ = token;
 }
 
 int LicsClient::getAuthAccess() {
@@ -171,6 +164,7 @@ int LicsClient::getAuthAccess() {
     Status status = stub_->GetAuthAccess(&context, req, &resp);
     if (status.ok()) {
         SPDLOG_INFO(" get accessed token: {0} ok", resp.token());
+        setToken(resp.token());
         return resp.respcode();
     }
 
@@ -224,9 +218,7 @@ void LicsClient::enqueue(std::shared_ptr<LicsEvent> t) {
         event_.push_back(t);
     }
     
-
     cv_of_event_.notify_one(); // does not need lock to hold for notification.
-
 }
 
 void LicsClient::doLoop() {

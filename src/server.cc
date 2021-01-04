@@ -1,20 +1,37 @@
 #include "server.h"
+#include <ctime>
+
+long GetTimeSecsFromEpoch() {
+    std::time_t result = std::time(nullptr);
+    return result;
+}
+
+
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG // set level beyond debug when put it into production 
+#include "spdlog/spdlog.h"
+#include "spdlog/fmt/ostr.h" // must be included if log user defined object
+#include "spdlog/cfg/env.h"
+#include "spdlog/sinks/rotating_file_sink.h"
 
 #define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
 
 Client::Client(long token) : clientToken(token) {
-
+    timestamp = GetTimeSecsFromEpoch();
 }
 
 void Client::UpdateTimestamp() {
     // TODO: update timestamp with system;
 }
 
-void Client::IncFailedCnt() {
+int Client::HeartbeatTimeoutCnt() {
+    return continusKeepAliveFailedCnt;
+}
+
+void Client::IncHeartbeatTimeoutCnt() {
     ++continusKeepAliveFailedCnt;
 }
 
-void Client::ClearFailedCnt() {
+void Client::ZeroHeartbeatTimeoutCnt() {
     continusKeepAliveFailedCnt = 0;
 }
 
@@ -22,14 +39,18 @@ long Client::GetLatestTimestamp() {
     return timestamp;
 }
 
+long Client::GetToken() {
+    return clientToken;
+}
+
 bool Client::Alive() {
 
     // TODO: read max keep alive from conf
-    if (continusKeepAliveFailedCnt) {
-        return true;
+    if (continusKeepAliveFailedCnt > 3) {
+        return false;
     }
 
-    return false;
+    return true;
 }
 
 void Client::AddUsedLics(long algoID, int num) {
@@ -100,28 +121,33 @@ void LicsServer::Shutdown() {
 void LicsServer::doLoop() {
     while (running_) {
 
-        for (auto& client : clientQ) {
-            if (!client.second->Alive()) {
-                // delete client and release used lics
-            }
-
-            // check if the client keep alive
-            long clientTime = client.second->GetLatestTimestamp();
-            long sysTime = 0;// bug to be fixed
+        long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
+        for (auto client = clientQ.begin(); client != clientQ.end();) {
+             // check if the client keep alive
+            long clientTime = client->second->GetLatestTimestamp();
+            
             long diff = sysTime >= clientTime ? sysTime - clientTime : 0; // TODO: mark the client died if sysTime < clientTime.
             // TODO: get timeout from conf
             if (diff > 30) {
                 // make the continusKeepAliveFailedCnt plus plus
-                client.second->IncFailedCnt();
+                client->second->IncHeartbeatTimeoutCnt();
+                SPDLOG_INFO("client({0}) hearbeat timeout reach {1}", client->first, client->second->HeartbeatTimeoutCnt());
+            }
+
+            if (!client->second->Alive()) {
+                // TODO:delete client and release used lics
+                SPDLOG_INFO("detect heatbeat-stoped client. remove token:{0}", client->second->GetToken());
+                client = clientQ.erase(client);
+            } else {
+                ++client;
             }
         }
-
 
         // TODO: call vcloud api to update license.
 
 
         // TODO: get interval from conf
-        sleep(1);
+        sleep(30);
 
     }
 }
@@ -186,6 +212,13 @@ long LicsServer::newClientToken() {
 Status LicsServer::CreateLics(ServerContext* context, 
                 const CreateLicsRequest* request, 
                 CreateLicsResponse* response) {
+    // when SPDLOG_ACTIVE_LEVEL macro beyond SPDLOG_LEVEL_DEBUG, all SPDLOG_DEBUG will be not compiled.
+    SPDLOG_DEBUG("client({0}) send lics alloc request: vendor({1}), type({2}), algorithm_id({3}), expected_lics({4})", 
+                request->token(),
+                request->algo().vendor(),
+                request->algo().type(),
+                request->algo().algorithmid(),
+                request->clientexpectedlicsnum());
     long clientToken = request->token();
     auto client = clientQ.find(clientToken);
     if (client == clientQ.end()) {
@@ -203,7 +236,15 @@ Status LicsServer::CreateLics(ServerContext* context,
     int licsNum = licsAlloc(clientToken, request->algo().algorithmid(), request->clientexpectedlicsnum());
     response->set_clientgetactuallicsnum(licsNum);
     response->set_respcode(ELICS_OK);
-    
+
+    SPDLOG_DEBUG("response client({0}) lics alloc request: vendor({1}), type({2}), algorithm_id({3}), actual_lics({4}), request_id({5}), respcode({6})", 
+                request->token(),
+                response->algo().vendor(),
+                response->algo().type(),
+                response->algo().algorithmid(),
+                response->clientgetactuallicsnum(),
+                response->requestid(),
+                response->respcode());  
     return Status::OK;
 }
 
@@ -211,6 +252,13 @@ Status LicsServer::CreateLics(ServerContext* context,
 Status LicsServer::DeleteLics(ServerContext* context, 
                 const DeleteLicsRequest* request, 
                 DeleteLicsResponse* response) {
+    SPDLOG_DEBUG("client({0}) send lics free request: vendor({1}), type({2}), algorithm_id({3}), lics({4}), request_id({5})",
+                request->token(),
+                request->algo().vendor(),
+                request->algo().type(),
+                request->algo().algorithmid(),
+                request->licsnum(),
+                request->requestid());
     long clientToken = request->token();
     auto client = clientQ.find(clientToken);
     if (client == clientQ.end()) {
@@ -229,6 +277,14 @@ Status LicsServer::DeleteLics(ServerContext* context,
     response->set_licsnum(licsNum);
     response->set_respcode(ELICS_OK);
 
+    SPDLOG_DEBUG("response client({0}) lics free request: vendor({1}), type({2}), algorithm_id({3}), lics({4}), request_id({5}), respcode({6})",
+                request->token(),
+                response->algo().vendor(),
+                response->algo().type(),
+                response->algo().algorithmid(),
+                response->licsnum(),
+                response->requestid(),
+                response->respcode());
     return Status::OK;       
 }
 
@@ -242,6 +298,10 @@ Status LicsServer::QueryLics(ServerContext* context,
 Status LicsServer::GetAuthAccess(ServerContext* context, 
             const GetAuthAccessRequest* request, 
             GetAuthAccessResponse* response) {
+    SPDLOG_DEBUG("client({0}) send auth access request: ip({1}), port({2})",
+                request->token(),
+                request->ip(),
+                request->port());
     long token = request->token(); // bug to be fixed:: make sure token is 64bits field.
 
     // TODO: check if token is exist or not, if exist then reallocted a token for client and print error
@@ -251,13 +311,20 @@ Status LicsServer::GetAuthAccess(ServerContext* context,
         SPDLOG_INFO("find a same token client:{0}", token);
     }
     long newToken = newClientToken();
-    SPDLOG_INFO("allocate a new token:{0}", newToken);
+    //SPDLOG_INFO("allocate a new token:{0}", newToken);
 
     std::shared_ptr<Client> c = std::make_shared<Client>(newToken);
     clientQ[newToken] = c;
 
     response->set_token(newToken);
     response->set_respcode(ELICS_OK);
+
+    SPDLOG_DEBUG("response client(token:{0} ip:{1} port:{2}) auth access request: token({3}), respcode({4})",
+                request->token(),
+                request->ip(),
+                request->port(),
+                response->token(),
+                response->respcode());
 
     return Status::OK;
 }
@@ -278,6 +345,8 @@ Status LicsServer::KeepAlive(ServerContext* context,
     }
 
     // TODO: allocte licence for picture
+    // std::string kp;
+    // kp += "client(" + std::string(request->token()) + ")(algo requestID totalLics usedLics clientMaxLimit)";
     for (int idx = 0; idx < request->lics_size(); ++idx ) {
         if (request->lics(idx).algo().type() == TaskType::PICTURE) {
             int clientMaxLimit = request->lics(idx).maxlimit();
@@ -285,7 +354,10 @@ Status LicsServer::KeepAlive(ServerContext* context,
             // TODO: allocate stragy
             response->add_lics()->set_maxlimit(clientMaxLimit);
         }
+        // kp += request->lics(idx).algo() + " " + request->lics(idx).requestid() + " " + request->lics(idx).totallics() + " "
+        //  + request->lics(idx).usedlics() + " " + request->lics(idx).maxlimit() + "\n";
     }
+    //SPDLOG_DEBUG(kp);
 
     // update client timestamp
     client->second->UpdateTimestamp();
@@ -389,9 +461,10 @@ int main(int argc, char** argv)
     ServerConf conf(SERVER_CONF_FILE);
 
     auto log = spdlog::rotating_logger_mt("server", conf.GetItem("log"), 1048576 * 5, 3);
-    log->flush_on(spdlog::level::info); //set flush policy 
+    log->flush_on(spdlog::level::debug); //set flush policy 
     spdlog::set_default_logger(log); // set log to be defalut 
-    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v");    
+    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v");   
+    spdlog::set_level(spdlog::level::debug); 
 
     std::string port = conf.GetItem("port");
     RunServer(port);
