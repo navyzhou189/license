@@ -18,14 +18,6 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
         spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v"); 
     }
 
-
-    // TODO: start a doLoop thread
-    std::thread t(&LicsClient::doLoop, this);
-    t.detach();
-
-    sleep(1);// have doLoop ready to handle all event.
-
-
     // load all license into cache, depend by vendor
     std::shared_ptr<AlgoLics> odLics = std::make_shared<AlgoLics>();
     odLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
@@ -34,6 +26,7 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     odLics->set_requestid(-1);
     odLics->set_totallics(0);
     odLics->set_usedlics(0);
+    odLics->set_maxlimit(100); // TODO: set by app
     cache_[UNIS_OD] = odLics;
 
     std::shared_ptr<AlgoLics> faceOaLics = std::make_shared<AlgoLics>();
@@ -43,6 +36,7 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     faceOaLics->set_requestid(-1);
     faceOaLics->set_totallics(0);
     faceOaLics->set_usedlics(0);
+    faceOaLics->set_maxlimit(200);
     cache_[UNIS_FACE_OA] = faceOaLics;
 
     std::shared_ptr<AlgoLics> vasOaLics = std::make_shared<AlgoLics>();
@@ -52,9 +46,14 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     vasOaLics->set_requestid(-1);
     vasOaLics->set_totallics(0);
     vasOaLics->set_usedlics(0);
+    vasOaLics->set_maxlimit(300);
     cache_[UNIS_VAS_OA] = vasOaLics;
 
+    // TODO: start a doLoop thread
+    std::thread t(&LicsClient::doLoop, this);
+    t.detach();
 
+    sleep(1);// have doLoop ready to handle all event.
 }
 
 int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
@@ -96,9 +95,14 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
             resp.set_clientgetactuallicsnum(actual);
 
             search->second->set_usedlics(used + actual);
+            return ELICS_OK;
+        } else {
+            SPDLOG_WARN("algorithm({0}) id not exist", req.algo().algorithmid());
+            return ELICS_ALGO_NOT_EXIST;
         }
     }
 
+    SPDLOG_ERROR("unsupport task type:{0}", req.algo().type());
     return ELICS_UNKOWN_ERROR;   
 }
 
@@ -177,8 +181,20 @@ int LicsClient::keepAlive() {
     KeepAliveResponse resp;
     ClientContext context;
 
-    // TODO: set client maximum limit
-    //req.set_maxlimit(100);
+    req.set_token(getToken());
+    // upload picture lics to server
+    for(auto iter : cache_) { 
+        AlgoLics* lics = req.add_lics();
+        lics->set_requestid(iter.second->requestid());
+        lics->set_totallics(iter.second->totallics());
+        lics->set_usedlics(iter.second->usedlics());
+        lics->set_maxlimit(iter.second->maxlimit());
+
+        lics->mutable_algo()->set_vendor(iter.second->algo().vendor());
+        lics->mutable_algo()->set_type(iter.second->algo().type());
+        lics->mutable_algo()->set_algorithmid(iter.second->algo().algorithmid());
+    }
+
     Status status = stub_->KeepAlive(&context, req, &resp);
 
     // TODO: parse the response, 
@@ -235,7 +251,7 @@ void LicsClient::doLoop() {
 
         // if ok, start keepAlive execution
         while(true) {
-            // check if event happens
+            // check if event happens, get the exit flag.
             
 
             // TODO: send keepavlie request to license server with license cache.
@@ -258,7 +274,7 @@ void LicsClient::doLoop() {
             
 
             // TODO: sleep strategy
-            sleep(1);
+            sleep(30);
         }
     }
 }

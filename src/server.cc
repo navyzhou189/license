@@ -21,6 +21,8 @@ Client::Client(long token) : clientToken(token) {
 
 void Client::UpdateTimestamp() {
     // TODO: update timestamp with system;
+    timestamp = GetTimeSecsFromEpoch();
+    ZeroHeartbeatTimeoutCnt();
 }
 
 int Client::HeartbeatTimeoutCnt() {
@@ -341,12 +343,12 @@ Status LicsServer::KeepAlive(ServerContext* context,
     auto client = clientQ.find(clientToken);
     if (client == clientQ.end()) {
         response->set_respcode(ELICS_CLIENT_NOT_EXIST);
+        SPDLOG_INFO("keepalive failed: client({0}) not exist", clientToken);
         return Status::OK;
     }
 
     // TODO: allocte licence for picture
-    // std::string kp;
-    // kp += "client(" + std::string(request->token()) + ")(algo requestID totalLics usedLics clientMaxLimit)";
+    std::string kp = "client({0}) lics: {1} \nvendor type algorithmID requestID totalLics usedLics clientMaxLimit\n";
     for (int idx = 0; idx < request->lics_size(); ++idx ) {
         if (request->lics(idx).algo().type() == TaskType::PICTURE) {
             int clientMaxLimit = request->lics(idx).maxlimit();
@@ -354,10 +356,15 @@ Status LicsServer::KeepAlive(ServerContext* context,
             // TODO: allocate stragy
             response->add_lics()->set_maxlimit(clientMaxLimit);
         }
-        // kp += request->lics(idx).algo() + " " + request->lics(idx).requestid() + " " + request->lics(idx).totallics() + " "
-        //  + request->lics(idx).usedlics() + " " + request->lics(idx).maxlimit() + "\n";
+        kp += std::to_string(request->lics(idx).algo().vendor()) + "\t" + 
+                std::to_string(request->lics(idx).algo().type()) + "\t" +
+                std::to_string(request->lics(idx).algo().algorithmid()) + "\t" +
+                std::to_string(request->lics(idx).requestid()) + "\t\t" + 
+                std::to_string(request->lics(idx).totallics()) + "\t" + 
+                std::to_string(request->lics(idx).usedlics()) + "\t" + 
+                std::to_string(request->lics(idx).maxlimit()) + "\n";
     }
-    //SPDLOG_DEBUG(kp);
+    SPDLOG_DEBUG(kp, clientToken, request->lics_size());
 
     // update client timestamp
     client->second->UpdateTimestamp();

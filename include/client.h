@@ -76,7 +76,7 @@ private:
 private:
     long token_{-1};
 
-    std::map<long, std::shared_ptr<AlgoLics>> cache_;
+    std::map<long, std::shared_ptr<AlgoLics>> cache_; // key is algorithm id
 
     std::unique_ptr<License::Stub> stub_;
 
