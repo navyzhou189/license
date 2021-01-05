@@ -1,5 +1,7 @@
 #include "server.h"
+#include "http.h"
 #include <ctime>
+
 
 long GetTimeSecsFromEpoch() {
     std::time_t result = std::time(nullptr);
@@ -146,6 +148,9 @@ void LicsServer::doLoop() {
         }
 
         // TODO: call vcloud api to update license.
+        HttpClient httpClient;
+        httpClient.Get("", "");
+        SPDLOG_INFO("connecting to vcloud");
 
 
         // TODO: get interval from conf

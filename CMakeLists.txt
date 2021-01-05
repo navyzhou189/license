@@ -57,10 +57,12 @@ add_custom_command(
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 # Include other dependency header files
 include_directories("${CMAKE_SOURCE_DIR}/include")
+include_directories("${CMAKE_SOURCE_DIR}/3rdparty/curl/include") # to be fixed
 
 # compile 3rdparty into static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog)
 add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/googletest)
+#add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/curl)
 
 # set dependency library  
 set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
@@ -87,13 +89,16 @@ target_link_libraries(${ClientTarget}
 
 set(ServerTarget "LicenseServer")
 set(ServerSrc "src/server.cc")
+set(HttpSrc "src/http.cc")
 add_executable(${ServerTarget} ${ServerSrc} 
     ${license_proto_srcs} 
-    ${license_grpc_srcs})
+    ${license_grpc_srcs}
+    ${HttpSrc})
 target_link_libraries(${ServerTarget}
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF}
-    ${LOGGER})
+    ${LOGGER}
+    "/home/navychou/wins_remote/test/grpc/3rdparty/curl/build/lib/libcurl.so")
 
 
