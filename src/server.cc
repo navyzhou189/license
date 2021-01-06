@@ -1,11 +1,9 @@
 #include "server.h"
 #include <ctime>
 
-
-long GetTimeSecsFromEpoch() {
-    std::time_t result = std::time(nullptr);
-    return result;
-}
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 
 
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG // set level beyond debug when put it into production 
@@ -15,6 +13,11 @@ long GetTimeSecsFromEpoch() {
 #include "spdlog/sinks/rotating_file_sink.h"
 
 #define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
+
+long GetTimeSecsFromEpoch() {
+    std::time_t result = std::time(nullptr);
+    return result;
+}
 
 Client::Client(long token) : clientToken(token) {
     timestamp = GetTimeSecsFromEpoch();
@@ -113,12 +116,40 @@ void LicsServer::doLoop() {
 
         // TODO: call vcloud api to update license.
         HttpReply reply;
-        httpClient.Get("http://192.168.11.25:6000/api/v2/vcloud/license/getallauthinfo", reply);
-        SPDLOG_INFO("connecting to vcloud");
+        httpClient.Get("http://192.168.11.25:6000/api/vcloud/v2/license/authinfos", reply);
+        SPDLOG_INFO("GET from vcloud:{0}", reply.response);
+        rapidjson::Document document;
+        document.Parse(reply.response, reply.size);
+        if (!document.HasMember("data")) {
+            SPDLOG_WARN("json parse failed: no found field(data)");
+        }
+
+        if (!document["data"].HasMember("res")) {
+            SPDLOG_WARN("json parse failed: no found field(res)");
+        }
+
+        if (!document["data"]["res"].HasMember("FVSAOD-MAX-CLASSES")) {
+            SPDLOG_WARN("json parse failed: no found field(FVSAOD-MAX-CLASSES)");
+        }
+
+        if (!document["data"]["res"]["FVSAOD-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num)");
+        }
+
+
+        const rapidjson::Value& a = document["data"]["res"]["FVSAOD-MAX-CLASSES"]["num"];
+        printf("data type:%d value:%d\n", a.GetType(), a.GetInt());
+
+        rapidjson::Value::MemberIterator od = document.FindMember("FVSAOD-MAX-CLASSES");
+        if (od != document.MemberEnd()) {
+            printf("get od:%d\n", od->value.GetInt());
+        }
+
         if (reply.response) {
             delete reply.response;
         }
 
+        
         // TODO: get interval from conf
         sleep(30);
 

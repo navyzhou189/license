@@ -58,11 +58,13 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 # Include other dependency header files
 include_directories("${CMAKE_SOURCE_DIR}/include")
 include_directories("${CMAKE_SOURCE_DIR}/3rdparty/curl/include") # to be fixed
+include_directories("${CMAKE_SOURCE_DIR}/3rdparty/rapidjson/include")
 
 # compile 3rdparty into static library
 add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog)
 add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/googletest)
 #add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/curl)
+add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/rapidjson)
 
 # set dependency library  
 set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)

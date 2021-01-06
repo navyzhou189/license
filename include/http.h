@@ -22,9 +22,9 @@ class HttpClient {
 public:
     HttpClient();
     ~HttpClient();
-    int Post(const std::string& url, HttpReply& resp);
-    int Put(const std::string& url, HttpReply& resp);
-    int Get(const std::string& url, HttpReply& resp);
+    int Post(const std::string& url, HttpReply& reply);
+    int Put(const std::string& url, HttpReply& reply);
+    int Get(const std::string& url, HttpReply& reply);
 private:
     bool connIsOpened();
     int openConn();
