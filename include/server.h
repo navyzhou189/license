@@ -16,7 +16,7 @@
 
 #include "license.grpc.pb.h"
 #include "lics_error.h"
-
+#include "http.h"
 
 
 using grpc::Server;
@@ -59,6 +59,42 @@ private:
     long timestamp{0};
     int continusKeepAliveFailedCnt {0};
     std::map<long, std::shared_ptr<AlgoLics>> algo; // key is algorithm id
+};
+
+class LicsServer final : public License::Service {
+public:
+LicsServer();
+
+void Shutdown();
+
+Status CreateLics(ServerContext* context, 
+                const CreateLicsRequest* request, 
+                CreateLicsResponse* response) override;
+Status DeleteLics(ServerContext* context, 
+                const DeleteLicsRequest* request, 
+                DeleteLicsResponse* response) override;
+Status QueryLics(ServerContext* context, 
+                const QueryLicsRequest* request, 
+                QueryLicsResponse* response) override;
+Status GetAuthAccess(ServerContext* context, 
+            const GetAuthAccessRequest* request, 
+            GetAuthAccessResponse* response) override;
+Status KeepAlive(ServerContext* context, 
+            const KeepAliveRequest* request, 
+            KeepAliveResponse* response) override;
+
+private:
+    long newClientToken();
+    int licsAlloc(long token, long algoID, int expected);
+    int licsFree(long token, long algoID, int expected);
+    void doLoop();
+
+private:
+    long tokenBase_{0};// TODO:: lock contention
+    std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
+    std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
+    std::atomic<bool> running_{true};
+    HttpClient httpClient;
 };
 
 

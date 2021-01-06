@@ -7,16 +7,50 @@
 #include "spdlog/cfg/env.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 
+#include <stdlib.h>
+
+
+static size_t doCurlWriteCB(void *data, size_t size, size_t nmemb, void *userp) {
+    size_t realsize = size * nmemb;
+    HttpReply *mem = (HttpReply*)userp;
+
+    char *ptr = (char*)realloc(mem->response, mem->size + realsize + 1);
+    if(ptr == NULL)
+        return 0;  /* out of memory! */
+
+    mem->response = ptr;
+    memcpy(&(mem->response[mem->size]), data, realsize);
+    mem->size += realsize;
+    mem->response[mem->size] = 0;
+
+    return realsize;
+}
+
 HttpClient::HttpClient() {
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    CURLcode ret = curl_global_init(CURL_GLOBAL_DEFAULT);
+    if(ret != CURLE_OK) {
+        SPDLOG_ERROR("curl_easy_perform() failed: {0}",curl_easy_strerror(ret));
+        abort();
+    }
+    ppCurlHandle = new (CURL*);
+    
 }
 
 HttpClient::~HttpClient() {
+
+    if (ppCurlHandle) {
+        delete ppCurlHandle;
+        ppCurlHandle = nullptr;
+    }
     curl_global_cleanup();
 }
 
-int HttpClient::Get(const std::string& req, const std::string& resp) {
-    std::lock_guard<std::mutex> lk(mtx);
+
+// bug to be fixed: cause the method is a syc-ping-pong, it will block indefinity when remote peer don't send a response.
+int HttpClient::Get(const std::string& url, HttpReply& reply) {
+    std::lock_guard<std::mutex> lk(execlusive_op_protect);
+
+    // make sure connection is opened before use, if fail return error
     if (!connIsOpened()) {
         int ret = openConn();
         if (ret != EHTTP_OK) {
@@ -25,24 +59,31 @@ int HttpClient::Get(const std::string& req, const std::string& resp) {
     }
 
     CURLcode res;
-    curl_easy_setopt(handle.curl, CURLOPT_URL, "http://192.168.11.25:6000/api/v2/vcloud/license/getallauthinfo");
-    curl_easy_setopt(handle.curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(*ppCurlHandle, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(*ppCurlHandle, CURLOPT_HTTPGET, 1L);
     //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-    curl_easy_setopt(handle.curl, CURLOPT_FOLLOWLOCATION, 1L); // tell us to follow redirection if redirected is need
-    res = curl_easy_perform(handle.curl);
+    
+    curl_easy_setopt(*ppCurlHandle, CURLOPT_WRITEFUNCTION, doCurlWriteCB);/* send all data to this function  */
+    /* we pass our 'chunk' struct to the callback function */
+    curl_easy_setopt(*ppCurlHandle, CURLOPT_WRITEDATA, (void *)&reply);
+    curl_easy_setopt(*ppCurlHandle, CURLOPT_FOLLOWLOCATION, 1L); // tell us to follow redirection if redirected is need
+    res = curl_easy_perform(*ppCurlHandle);
     if(res != CURLE_OK) {
+        closeConn();// go around broken connection.
         SPDLOG_ERROR("curl_easy_perform() failed: {0}",curl_easy_strerror(res));
-    }
-    
+        return EHTTP_GET_FAILURE;
+    }  
+
+    return EHTTP_OK;
     
 }
 
-int HttpClient::Put(const std::string& req, const std::string& resp) {
-    std::lock_guard<std::mutex> lk(mtx);
+int HttpClient::Put(const std::string& url, HttpReply& reply) {
+    std::lock_guard<std::mutex> lk(execlusive_op_protect);
 }
 
-int HttpClient::Post(const std::string& req, const std::string& resp) {
-    std::lock_guard<std::mutex> lk(mtx);
+int HttpClient::Post(const std::string& url, HttpReply& reply) {
+    std::lock_guard<std::mutex> lk(execlusive_op_protect);
 }
 
 bool HttpClient::connIsOpened() {
@@ -50,22 +91,21 @@ bool HttpClient::connIsOpened() {
 }
 
 int HttpClient::openConn() {
-    handle.curl = curl_easy_init();
-    if(!(handle.curl)) {
-        SPDLOG_ERROR("curl_easy_init() failed, the connection to remote is not build");
+    *ppCurlHandle = curl_easy_init();
+    if(!(*ppCurlHandle)) {
+        SPDLOG_ERROR("curl_easy_init() failed, the connection to remote is not establised");
         return EHTTP_OPEN_CONN_FAILURE;
     }
 
-    handle.curl = nullptr;
     connOpened = true;
     return EHTTP_OK;
 }
 
 void HttpClient::closeConn() {
-    if (handle.curl) {
-        curl_easy_cleanup(handle.curl);
+    if (*ppCurlHandle) {
+        curl_easy_cleanup(*ppCurlHandle);
     }
     
-    handle.curl = nullptr;
+    *ppCurlHandle = nullptr;
     connOpened = false;
 }

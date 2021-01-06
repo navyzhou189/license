@@ -7,31 +7,32 @@
 
 #define EHTTP_OK    (0)
 #define EHTTP_OPEN_CONN_FAILURE   (100)
+#define EHTTP_GET_FAILURE   (101)
 
 
-class HttpClientHandle {
-public:
-    HttpClientHandle() { curl = nullptr;}
-    CURL* curl{nullptr};
+struct HttpReply {
+   char *response{nullptr};
+   size_t size{0};
 };
 
-// one HttpClient run on one single thread
-// there is only one interface running at the same time: Post/Put/Get
+// one HttpClient run in one single thread
+// Post/Put/Get is a short-connection-based method, which will do tcp handshake, data transfer and tcp termination whenever calling method.
+// HttpClient will allocate HttpReply.response, but app layor need to hold the responsability of memory free, like delete HttpReply.response.
 class HttpClient {
 public:
     HttpClient();
     ~HttpClient();
-    int Post(const std::string& req, const std::string& resp);
-    int Put(const std::string& req, const std::string& resp);
-    int Get(const std::string& req, const std::string& resp);
+    int Post(const std::string& url, HttpReply& resp);
+    int Put(const std::string& url, HttpReply& resp);
+    int Get(const std::string& url, HttpReply& resp);
 private:
     bool connIsOpened();
     int openConn();
     void closeConn();
 private:
     bool connOpened{false};
-    HttpClientHandle handle;
-    std::mutex mtx;
+    CURL** ppCurlHandle{nullptr};
+    std::mutex execlusive_op_protect;
 };
 
 

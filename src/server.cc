@@ -1,5 +1,4 @@
 #include "server.h"
-#include "http.h"
 #include <ctime>
 
 
@@ -77,41 +76,6 @@ void Client::DecUsedLics(long algoID, int num) {
     search->second->set_usedlics(used - num);
 }
 
-class LicsServer final : public License::Service {
-public:
-LicsServer();
-
-void Shutdown();
-
-Status CreateLics(ServerContext* context, 
-                const CreateLicsRequest* request, 
-                CreateLicsResponse* response) override;
-Status DeleteLics(ServerContext* context, 
-                const DeleteLicsRequest* request, 
-                DeleteLicsResponse* response) override;
-Status QueryLics(ServerContext* context, 
-                const QueryLicsRequest* request, 
-                QueryLicsResponse* response) override;
-Status GetAuthAccess(ServerContext* context, 
-            const GetAuthAccessRequest* request, 
-            GetAuthAccessResponse* response) override;
-Status KeepAlive(ServerContext* context, 
-            const KeepAliveRequest* request, 
-            KeepAliveResponse* response) override;
-
-private:
-    long newClientToken();
-    int licsAlloc(long token, long algoID, int expected);
-    int licsFree(long token, long algoID, int expected);
-    void doLoop();
-
-private:
-    long tokenBase_{0};// TODO:: lock contention
-    std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
-    std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
-    std::atomic<bool> running_{true};
-};
-
 LicsServer::LicsServer() {
     std::thread t(&LicsServer::doLoop, this);
     t.detach();
@@ -148,10 +112,12 @@ void LicsServer::doLoop() {
         }
 
         // TODO: call vcloud api to update license.
-        HttpClient httpClient;
-        httpClient.Get("", "");
+        HttpReply reply;
+        httpClient.Get("http://192.168.11.25:6000/api/v2/vcloud/license/getallauthinfo", reply);
         SPDLOG_INFO("connecting to vcloud");
-
+        if (reply.response) {
+            delete reply.response;
+        }
 
         // TODO: get interval from conf
         sleep(30);
