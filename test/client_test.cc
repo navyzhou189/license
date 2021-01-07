@@ -130,7 +130,7 @@ TEST(Picture, CreateFaceOA) {
     CreateLicsRequest createReq;
     createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
     createReq.mutable_algo()->set_type(TaskType::PICTURE);
-    createReq.mutable_algo()->set_algorithmid(UNIS_FACE_OA);
+    createReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
     createReq.set_clientexpectedlicsnum(1);
 
     // Container for the data we expect from the server.
@@ -145,7 +145,7 @@ TEST(Picture, CreateFaceOA) {
     DeleteLicsRequest deleteReq;
     deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
     deleteReq.mutable_algo()->set_type(TaskType::PICTURE);
-    deleteReq.mutable_algo()->set_algorithmid(UNIS_FACE_OA);
+    deleteReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
     deleteReq.set_token(createResp.token());
     deleteReq.set_licsnum(createResp.clientgetactuallicsnum());
     DeleteLicsResponse deleteResp;

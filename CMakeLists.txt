@@ -57,6 +57,7 @@ add_custom_command(
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 # Include other dependency header files
 include_directories("${CMAKE_SOURCE_DIR}/include")
+include_directories("${CMAKE_SOURCE_DIR}/include/inner")
 include_directories("${CMAKE_SOURCE_DIR}/3rdparty/curl/include") # to be fixed
 include_directories("${CMAKE_SOURCE_DIR}/3rdparty/rapidjson/include")
 

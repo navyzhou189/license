@@ -22,22 +22,22 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     std::shared_ptr<AlgoLics> odLics = std::make_shared<AlgoLics>();
     odLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
     odLics->mutable_algo()->set_type(TaskType::VIDEO);
-    odLics->mutable_algo()->set_algorithmid(UNIS_OD);
+    odLics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD);
     odLics->set_requestid(-1);
     odLics->set_totallics(0);
     odLics->set_usedlics(0);
     odLics->set_maxlimit(100); // TODO: set by app
-    cache_[UNIS_OD] = odLics;
+    cache_[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
 
     std::shared_ptr<AlgoLics> faceOaLics = std::make_shared<AlgoLics>();
     faceOaLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
     faceOaLics->mutable_algo()->set_type(TaskType::PICTURE);
-    faceOaLics->mutable_algo()->set_algorithmid(UNIS_FACE_OA);    
+    faceOaLics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);    
     faceOaLics->set_requestid(-1);
     faceOaLics->set_totallics(0);
     faceOaLics->set_usedlics(0);
     faceOaLics->set_maxlimit(200);
-    cache_[UNIS_FACE_OA] = faceOaLics;
+    cache_[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA] = faceOaLics;
 
     std::shared_ptr<AlgoLics> vasOaLics = std::make_shared<AlgoLics>();
     vasOaLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);

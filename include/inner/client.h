@@ -15,20 +15,12 @@
 #include <unistd.h>
 #include "license.grpc.pb.h"
 #include "lics_error.h"
+#include "lics_interface.h"
 
 #include "spdlog/spdlog.h"
 #include "spdlog/cfg/env.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 
-/*
-    NOTICES:
-    algorithm id is very important, id depend by vendor.
-*/
-// start to add
-#define UNIS_OD  (100)
-#define UNIS_FACE_OA (101)
-#define UNIS_VAS_OA (102)
-// end to add
 
 using grpc::Channel;
 using grpc::ClientContext;
