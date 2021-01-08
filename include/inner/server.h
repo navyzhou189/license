@@ -17,6 +17,7 @@
 #include "license.grpc.pb.h"
 #include "lics_error.h"
 #include "http.h"
+#include "lics_interface.h"
 
 
 using grpc::Server;
@@ -88,13 +89,14 @@ private:
     int licsAlloc(long token, long algoID, int expected);
     int licsFree(long token, long algoID, int expected);
     void doLoop();
+    void UpdateCacheAlgosTotalLic(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic);
+    void GetCacheAlgoUsedLic(std::map<long, std::shared_ptr<AlgoLics>>& cacheAlgosUsedLic);
 
 private:
     long tokenBase_{0};// TODO:: lock contention
     std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
     std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
     std::atomic<bool> running_{true};
-    HttpClient httpClient;
 };
 
 

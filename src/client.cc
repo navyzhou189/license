@@ -1,5 +1,21 @@
 #include "client.h"
 
+int lics_init(AlgoCapability* algoLics, int size) {
+
+}
+
+int lics_apply(int algoID, const int expectLicsNum, int* actualLicsNum) {
+
+}
+
+int lics_free(int algoID, const int licsNum) {
+
+}
+
+int lics_cleanup() {
+    
+}
+
 LicsClient::~LicsClient() {
     running_= false;
     sleep(1); // sleep for a delay to exit doLoop thread.

@@ -24,7 +24,7 @@ public:
     ~HttpClient();
     int Post(const std::string& url, HttpReply& reply);
     int Put(const std::string& url, HttpReply& reply);
-    int Get(const std::string& url, HttpReply& reply);
+    int Get(const std::string& url, std::string& reply);
 private:
     bool connIsOpened();
     int openConn();

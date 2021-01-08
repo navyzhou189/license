@@ -14,6 +14,72 @@
 
 #define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
 
+class ServerConf {
+public:
+    ServerConf(const std::string& file) {
+        std::string line;
+        std::ifstream confFile (file);
+        if (confFile.is_open())
+        {
+            while ( getline (confFile,line) )
+            {
+                parse(line);
+            }
+            confFile.close();
+        } else {
+            SPDLOG_ERROR("failed to open file:{0}", file);
+            abort();
+        }
+
+        confFile.close();
+    }
+
+    std::string GetItem(const std::string& key) {
+        auto search = conf_.find(key);
+        if (search != conf_.end()) {
+            return search->second;
+        }
+
+        return std::string("");
+    }
+
+private:
+    // trim all space and newline(\r\n or \r) characters
+    std::string trim(const std::string& str) {
+        std::string trimStr;
+
+        for (auto ch = str.begin(); ch != str.end(); ++ch) {
+            if ((*ch == '\r') || (*ch == '\n') || (*ch == ' ') ) {
+                continue;
+            }
+
+            trimStr.push_back(*ch);
+        }
+
+        return trimStr;
+    }
+
+    void parse(const std::string& line) {
+        std::string key;
+        std::string value;
+
+        size_t pos = line.find_first_of("=");
+        if (std::string::npos == pos) {
+            return;
+        }
+        key = trim(line.substr(0, pos)); // substr return a [pos, pos + count) substring
+        value = trim(line.substr(pos + 1, line.length()));
+
+        conf_[key] = value;
+
+        return;
+    }
+
+private:
+    std::map<std::string, std::string> conf_;
+
+};
+
 long GetTimeSecsFromEpoch() {
     std::time_t result = std::time(nullptr);
     return result;
@@ -80,6 +146,38 @@ void Client::DecUsedLics(long algoID, int num) {
 }
 
 LicsServer::LicsServer() {
+
+    // load all license into cache, depend by vendor
+    std::shared_ptr<AlgoLics> odLics = std::make_shared<AlgoLics>();
+    odLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+    odLics->mutable_algo()->set_type(TaskType::VIDEO);
+    odLics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD);
+    odLics->set_requestid(-1);
+    odLics->set_totallics(0);
+    odLics->set_usedlics(0);
+    odLics->set_maxlimit(0); // TODO: set by app
+    licenseQ[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
+
+    std::shared_ptr<AlgoLics> faceOaLics = std::make_shared<AlgoLics>();
+    faceOaLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+    faceOaLics->mutable_algo()->set_type(TaskType::PICTURE);
+    faceOaLics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);    
+    faceOaLics->set_requestid(-1);
+    faceOaLics->set_totallics(0);
+    faceOaLics->set_usedlics(0);
+    faceOaLics->set_maxlimit(0);
+    licenseQ[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA] = faceOaLics;
+
+    std::shared_ptr<AlgoLics> vasOaLics = std::make_shared<AlgoLics>();
+    vasOaLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+    vasOaLics->mutable_algo()->set_type(TaskType::PICTURE);
+    vasOaLics->mutable_algo()->set_algorithmid(UNIS_VAS_OA);
+    vasOaLics->set_requestid(-1);
+    vasOaLics->set_totallics(0);
+    vasOaLics->set_usedlics(0);
+    vasOaLics->set_maxlimit(0);
+    licenseQ[UNIS_VAS_OA] = vasOaLics;
+
     std::thread t(&LicsServer::doLoop, this);
     t.detach();
 }
@@ -87,6 +185,170 @@ LicsServer::LicsServer() {
 void LicsServer::Shutdown() {
     running_ = false;
     // TODO: sleep for a delay to shutdown server.
+}
+
+
+static std::mutex mtxOfLics;
+static std::shared_ptr<HttpClient> httpClientOfLics = nullptr;
+static std::shared_ptr<ServerConf> srvConfOfLics = nullptr;
+
+std::shared_ptr<HttpClient> getHttpClient() {
+    std::lock_guard<std::mutex> lk(mtxOfLics);
+    if (!httpClientOfLics) {
+        httpClientOfLics = std::make_shared<HttpClient>();
+    }
+
+    return httpClientOfLics;
+}
+
+std::shared_ptr<ServerConf> getServerConf() {
+    std::lock_guard<std::mutex> lk(mtxOfLics);
+    if (!srvConfOfLics) {
+        srvConfOfLics = std::make_shared<ServerConf>(SERVER_CONF_FILE);
+    }
+
+    return srvConfOfLics;
+}
+
+#define FETCH_ALGOS_TOTAL_LICS_URL  {\
+std::string("http://" + getServerConf()->GetItem("cloud") + "/api/vcloud/v2/license/authinfos")\
+}
+
+void FetchCloudAlgosTotalLic(std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic){
+    std::string reply;
+    if (getHttpClient()->Get(FETCH_ALGOS_TOTAL_LICS_URL, reply) != EHTTP_OK)
+        return;
+
+    SPDLOG_DEBUG("GET from cloud:{0}", reply.c_str());
+
+    rapidjson::Document document;
+
+    // absense of key field, like data or res, means that it's a bad response, throw it and return
+    document.Parse(reply.c_str());
+    if (!document.HasMember("data")) {
+        SPDLOG_WARN("json parse failed: no found field(data) GET from cloud:{0}", reply.c_str());
+        return;
+    }
+
+    if (!document["data"].HasMember("res")) {
+        SPDLOG_WARN("json parse failed: no found field(res) GET from cloud:{0}", reply.c_str());
+        return;
+    }
+
+    /*
+    * using F as a function of total algorithm license number, input: agorithm id
+    * F(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA) = F(VIASFACEP-MAX-CLASSES) + F(VIASCAR-MAX-CLASSES) / 24 / 3600 +
+    *                                               F(VIASOA-MAX-CLASSES) + F(FVSAOA-MAX-CLASSES)
+    * 
+    * F(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD) = F(VIASVIDEO-MAX-CLASSES) + F(VIASFACEV-MAX-CLASSES) + F(VIASOD-MAX-CLASSES)
+    *                                               + F(FVSAOD-MAX-CLASSES)
+    */
+
+    int numOfFacePersonVehicleNonOA = 0;
+    int numOfFacePersonVehicleNonOD = 0;
+
+    if (document["data"]["res"].HasMember("VIASFACEP-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["VIASFACEP-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under VIASFACEP-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            numOfFacePersonVehicleNonOA += document["data"]["res"]["VIASFACEP-MAX-CLASSES"]["num"].GetInt();
+        }
+    }
+
+    if (document["data"]["res"].HasMember("VIASCAR-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["VIASCAR-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under VIASCAR-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            int carLics = document["data"]["res"]["VIASCAR-MAX-CLASSES"]["num"].GetInt();
+            int translatedLics = carLics / 24 / 3600;
+            carLics = translatedLics <= 0 ? 0 : translatedLics;
+            numOfFacePersonVehicleNonOA += translatedLics;
+        }
+    }
+
+    if (document["data"]["res"].HasMember("VIASOA-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["VIASOA-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under VIASOA-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            numOfFacePersonVehicleNonOA += document["data"]["res"]["VIASOA-MAX-CLASSES"]["num"].GetInt();
+        }
+    }
+
+    if (document["data"]["res"].HasMember("FVSAOA-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["FVSAOA-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under FVSAOA-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            numOfFacePersonVehicleNonOA += document["data"]["res"]["FVSAOA-MAX-CLASSES"]["num"].GetInt();
+        }
+    }
+
+    if (document["data"]["res"].HasMember("VIASVIDEO-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["VIASVIDEO-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under VIASVIDEO-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            numOfFacePersonVehicleNonOD += document["data"]["res"]["VIASVIDEO-MAX-CLASSES"]["num"].GetInt();
+        }
+    }
+
+    if (document["data"]["res"].HasMember("VIASFACEV-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["VIASFACEV-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under VIASFACEV-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            numOfFacePersonVehicleNonOD += document["data"]["res"]["VIASFACEV-MAX-CLASSES"]["num"].GetInt();
+        }
+    }
+
+    if (document["data"]["res"].HasMember("VIASOD-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["VIASOD-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under VIASOD-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            numOfFacePersonVehicleNonOD += document["data"]["res"]["VIASOD-MAX-CLASSES"]["num"].GetInt();
+        }
+    }
+
+    if (document["data"]["res"].HasMember("FVSAOD-MAX-CLASSES")) {
+
+        if (!document["data"]["res"]["FVSAOD-MAX-CLASSES"].HasMember("num")) {
+            SPDLOG_WARN("json parse failed: no found field(num) under FVSAOD-MAX-CLASSES. GET from cloud:{0}", reply.c_str());
+        }else {
+            numOfFacePersonVehicleNonOD += document["data"]["res"]["FVSAOD-MAX-CLASSES"]["num"].GetInt();
+        }
+    }
+
+
+    std::shared_ptr<AlgoLics> oaLics = std::make_shared<AlgoLics>();
+    oaLics->set_totallics(numOfFacePersonVehicleNonOA);
+
+    std::shared_ptr<AlgoLics> odLics = std::make_shared<AlgoLics>();
+    odLics->set_totallics(numOfFacePersonVehicleNonOD);
+    
+
+    remoteAlgosTotalLic[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA] = oaLics;
+    remoteAlgosTotalLic[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
+
+}
+
+void UpdateCloudAlgosUsedLic(const std::map<long, std::shared_ptr<AlgoLics>>& licenseQ) {
+
+}
+
+
+void LicsServer::UpdateCacheAlgosTotalLic(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic) {
+    // TODO: add lock
+    for (const auto &remote : remoteAlgosTotalLic) {
+        licenseQ[remote.first]->set_totallics(remote.second->totallics());
+    }
+}
+
+void LicsServer::GetCacheAlgoUsedLic(std::map<long, std::shared_ptr<AlgoLics>>& cacheAlgosUsedLic) {
+
 }
 
 void LicsServer::doLoop() {
@@ -115,40 +377,15 @@ void LicsServer::doLoop() {
         }
 
         // TODO: call vcloud api to update license.
-        HttpReply reply;
-        httpClient.Get("http://192.168.11.25:6000/api/vcloud/v2/license/authinfos", reply);
-        SPDLOG_INFO("GET from vcloud:{0}", reply.response);
-        rapidjson::Document document;
-        document.Parse(reply.response, reply.size);
-        if (!document.HasMember("data")) {
-            SPDLOG_WARN("json parse failed: no found field(data)");
-        }
+        std::map<long, std::shared_ptr<AlgoLics>> remoteAlgosTotalLic;
+        FetchCloudAlgosTotalLic(remoteAlgosTotalLic);
 
-        if (!document["data"].HasMember("res")) {
-            SPDLOG_WARN("json parse failed: no found field(res)");
-        }
+        UpdateCacheAlgosTotalLic(remoteAlgosTotalLic);
 
-        if (!document["data"]["res"].HasMember("FVSAOD-MAX-CLASSES")) {
-            SPDLOG_WARN("json parse failed: no found field(FVSAOD-MAX-CLASSES)");
-        }
+        std::map<long, std::shared_ptr<AlgoLics>> cacheAlgosUsedLic;
+        GetCacheAlgoUsedLic(cacheAlgosUsedLic);
 
-        if (!document["data"]["res"]["FVSAOD-MAX-CLASSES"].HasMember("num")) {
-            SPDLOG_WARN("json parse failed: no found field(num)");
-        }
-
-
-        const rapidjson::Value& a = document["data"]["res"]["FVSAOD-MAX-CLASSES"]["num"];
-        printf("data type:%d value:%d\n", a.GetType(), a.GetInt());
-
-        rapidjson::Value::MemberIterator od = document.FindMember("FVSAOD-MAX-CLASSES");
-        if (od != document.MemberEnd()) {
-            printf("get od:%d\n", od->value.GetInt());
-        }
-
-        if (reply.response) {
-            delete reply.response;
-        }
-
+        UpdateCloudAlgosUsedLic(cacheAlgosUsedLic);
         
         // TODO: get interval from conf
         sleep(30);
@@ -376,76 +613,8 @@ Status LicsServer::KeepAlive(ServerContext* context,
 }
 
 
-
-class ServerConf {
-public:
-    ServerConf(const std::string& file) {
-        std::string line;
-        std::ifstream confFile (file);
-        if (confFile.is_open())
-        {
-            while ( getline (confFile,line) )
-            {
-                parse(line);
-            }
-            confFile.close();
-        } else {
-            SPDLOG_ERROR("failed to open file:{0}", file);
-            abort();
-        }
-
-        confFile.close();
-    }
-
-    std::string GetItem(const std::string& key) {
-        auto search = conf_.find(key);
-        if (search != conf_.end()) {
-            return search->second;
-        }
-
-        return std::string("");
-    }
-
-private:
-    // trim all space and newline(\r\n or \r) characters
-    std::string trim(const std::string& str) {
-        std::string trimStr;
-
-        for (auto ch = str.begin(); ch != str.end(); ++ch) {
-            if ((*ch == '\r') || (*ch == '\n') || (*ch == ' ') ) {
-                continue;
-            }
-
-            trimStr.push_back(*ch);
-        }
-
-        return trimStr;
-    }
-
-    void parse(const std::string& line) {
-        std::string key;
-        std::string value;
-
-        size_t pos = line.find_first_of("=");
-        if (std::string::npos == pos) {
-            return;
-        }
-        key = trim(line.substr(0, pos)); // substr return a [pos, pos + count) substring
-        value = trim(line.substr(pos + 1, line.length()));
-
-        conf_[key] = value;
-
-        return;
-    }
-
-private:
-    std::map<std::string, std::string> conf_;
-
-};
-
-
-void RunServer(const std::string& port) {
-    std::string server_address("0.0.0.0:" + port); 
+void RunServer() {
+    std::string server_address("0.0.0.0:" + getServerConf()->GetItem("port")); 
     LicsServer service;
 
     grpc::EnableDefaultHealthCheckService(true);
@@ -465,18 +634,18 @@ void RunServer(const std::string& port) {
     server->Wait();
 }
 
-int main(int argc, char** argv)
-{
-    ServerConf conf(SERVER_CONF_FILE);
-
-    auto log = spdlog::rotating_logger_mt("server", conf.GetItem("log"), 1048576 * 5, 3);
+void SetLog() {
+    auto log = spdlog::rotating_logger_mt("server", getServerConf()->GetItem("log"), 1048576 * 5, 3);
     log->flush_on(spdlog::level::debug); //set flush policy 
     spdlog::set_default_logger(log); // set log to be defalut 
     spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v");   
-    spdlog::set_level(spdlog::level::debug); 
+    spdlog::set_level(spdlog::level::debug);
+}
 
-    std::string port = conf.GetItem("port");
-    RunServer(port);
+int main(int argc, char** argv)
+{
+    SetLog();
+    RunServer();
 
     return 0;
 }

@@ -1,0 +1,98 @@
+
+cmake_minimum_required(VERSION 3.5.1)
+
+project(License C CXX)
+
+# run only on linux
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11")
+
+find_package(Threads REQUIRED)
+
+
+
+# Find Protobuf installation
+# Looks for protobuf-config.cmake file installed by Protobuf's cmake installation.
+set(protobuf_MODULE_COMPATIBLE TRUE)
+find_package(Protobuf CONFIG REQUIRED)
+message(STATUS "Using protobuf ${Protobuf_VERSION}")
+
+find_program(_PROTOBUF_PROTOC protoc)
+
+set(_PROTOBUF_LIBPROTOBUF protobuf::libprotobuf)
+set(_REFLECTION gRPC::grpc++_reflection)
+
+# Find gRPC installation
+# Looks for gRPCConfig.cmake file installed by gRPC's cmake installation.
+find_package(gRPC CONFIG REQUIRED)
+message(STATUS "Using gRPC ${gRPC_VERSION}")
+
+set(_GRPC_GRPCPP gRPC::grpc++)
+
+find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
+
+# log
+set(LOGGER spdlog::spdlog_header_only)
+
+# Proto file
+get_filename_component(license_proto "proto/license.proto" ABSOLUTE)
+get_filename_component(license_proto_path "${license_proto}" PATH)
+
+
+
+# Generated sources
+set(license_proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/license.pb.cc")
+set(license_proto_headers "${CMAKE_CURRENT_BINARY_DIR}/license.pb.h")
+set(license_grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/license.grpc.pb.cc")
+set(license_grpc_headers "${CMAKE_CURRENT_BINARY_DIR}/license.grpc.pb.h")
+add_custom_command(
+      OUTPUT "${license_proto_srcs}" "${license_proto_headers}" "${license_grpc_srcs}" "${license_grpc_headers}"
+      COMMAND ${_PROTOBUF_PROTOC}
+      ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
+        --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
+        -I "${license_proto_path}"
+        --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
+        "${license_proto}"
+      DEPENDS "${license_proto}")
+
+# Include generated *.pb.h files
+include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+message("CMAKE_CURRENT_BINARY_DIR is " ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(include)
+
+
+message("get value of _REFLECTION is :"  ${_REFLECTION})
+
+set(LOGGER "spdlog::spdlog")
+add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/spdlog)
+
+set(GTEST "gtest")
+add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/googletest)
+
+set(ClientTarget "TestLicenseClient")
+set(ClientTestMain "test/client_test.cc")
+set(ClientSrc "src/client.cc")
+add_executable(${ClientTarget} 
+    ${ClientSrc} 
+    ${ClientTestMain}
+    ${license_proto_srcs} 
+    ${license_grpc_srcs})
+target_link_libraries(${ClientTarget}
+    ${_REFLECTION}
+    ${_GRPC_GRPCPP}
+    ${_PROTOBUF_LIBPROTOBUF}
+    ${LOGGER}
+    ${gtest})
+
+
+set(ServerTarget "LicenseServer")
+set(ServerSrc "src/server.cc")
+add_executable(${ServerTarget} ${ServerSrc} 
+    ${license_proto_srcs} 
+    ${license_grpc_srcs})
+target_link_libraries(${ServerTarget}
+    ${_REFLECTION}
+    ${_GRPC_GRPCPP}
+    ${_PROTOBUF_LIBPROTOBUF}
+    ${LOGGER})
+
+

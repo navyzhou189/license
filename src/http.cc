@@ -47,7 +47,7 @@ HttpClient::~HttpClient() {
 
 
 // bug to be fixed: cause the method is a syc-ping-pong, it will block indefinity when remote peer don't send a response.
-int HttpClient::Get(const std::string& url, HttpReply& reply) {
+int HttpClient::Get(const std::string& url, std::string& reply) {
     std::lock_guard<std::mutex> lk(execlusive_op_protect);
 
     // make sure connection is opened before use, if fail return error
@@ -65,14 +65,22 @@ int HttpClient::Get(const std::string& url, HttpReply& reply) {
     
     curl_easy_setopt(*ppCurlHandle, CURLOPT_WRITEFUNCTION, doCurlWriteCB);/* send all data to this function  */
     /* we pass our 'chunk' struct to the callback function */
-    curl_easy_setopt(*ppCurlHandle, CURLOPT_WRITEDATA, (void *)&reply);
+    HttpReply httpReply;
+    curl_easy_setopt(*ppCurlHandle, CURLOPT_WRITEDATA, (void *)&httpReply);
     curl_easy_setopt(*ppCurlHandle, CURLOPT_FOLLOWLOCATION, 1L); // tell us to follow redirection if redirected is need
     res = curl_easy_perform(*ppCurlHandle);
     if(res != CURLE_OK) {
         closeConn();// go around broken connection.
-        SPDLOG_ERROR("curl_easy_perform() failed: {0}",curl_easy_strerror(res));
+        SPDLOG_ERROR("curl_easy_perform() failed:{0}, URL:{1}", curl_easy_strerror(res), url);
         return EHTTP_GET_FAILURE;
     }  
+
+    reply.assign(httpReply.response, httpReply.size);
+
+    if (httpReply.response) {
+        delete httpReply.response;
+        httpReply.size = 0;
+    }
 
     return EHTTP_OK;
     
