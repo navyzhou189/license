@@ -90,10 +90,12 @@ target_link_libraries(${ClientTarget}
     ${GTEST})
 
 
-set(ServerTarget "LicenseServer")
-set(ServerSrc "src/server.cc")
+set(ServerTarget "TestLicenseServer")
+set(ServerTestMain "test/server_test.cc")
+#set(ServerSrc "src/server.cc")
 set(HttpSrc "src/http.cc")
 add_executable(${ServerTarget} ${ServerSrc} 
+    ${ServerTestMain}
     ${license_proto_srcs} 
     ${license_grpc_srcs}
     ${HttpSrc})
@@ -102,6 +104,7 @@ target_link_libraries(${ServerTarget}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF}
     ${LOGGER}
+    ${GTEST}
     "/home/navychou/wins_remote/test/grpc/3rdparty/curl/build/lib/libcurl.so")
 
 

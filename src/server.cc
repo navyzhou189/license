@@ -214,7 +214,7 @@ std::shared_ptr<ServerConf> getServerConf() {
 std::string("http://" + getServerConf()->GetItem("cloud") + "/api/vcloud/v2/license/authinfos")\
 }
 
-void FetchCloudAlgosTotalLic(std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic){
+void LicsServer::fetchCloudAlgosTotalLic(std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic){
     std::string reply;
     if (getHttpClient()->Get(FETCH_ALGOS_TOTAL_LICS_URL, reply) != EHTTP_OK)
         return;
@@ -335,19 +335,19 @@ void FetchCloudAlgosTotalLic(std::map<long, std::shared_ptr<AlgoLics>>& remoteAl
 
 }
 
-void UpdateCloudAlgosUsedLic(const std::map<long, std::shared_ptr<AlgoLics>>& licenseQ) {
+void LicsServer::updateCloudAlgosUsedLic(const std::map<long, std::shared_ptr<AlgoLics>>& licenseQ) {
 
 }
 
 
-void LicsServer::UpdateCacheAlgosTotalLic(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic) {
+void LicsServer::updateCacheAlgosTotalLic(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic) {
     // TODO: add lock
     for (const auto &remote : remoteAlgosTotalLic) {
         licenseQ[remote.first]->set_totallics(remote.second->totallics());
     }
 }
 
-void LicsServer::GetCacheAlgoUsedLic(std::map<long, std::shared_ptr<AlgoLics>>& cacheAlgosUsedLic) {
+void LicsServer::getCacheAlgoUsedLic(std::map<long, std::shared_ptr<AlgoLics>>& cacheAlgosUsedLic) {
 
 }
 
@@ -378,14 +378,14 @@ void LicsServer::doLoop() {
 
         // TODO: call vcloud api to update license.
         std::map<long, std::shared_ptr<AlgoLics>> remoteAlgosTotalLic;
-        FetchCloudAlgosTotalLic(remoteAlgosTotalLic);
+        fetchCloudAlgosTotalLic(remoteAlgosTotalLic);
 
-        UpdateCacheAlgosTotalLic(remoteAlgosTotalLic);
+        updateCacheAlgosTotalLic(remoteAlgosTotalLic);
 
         std::map<long, std::shared_ptr<AlgoLics>> cacheAlgosUsedLic;
-        GetCacheAlgoUsedLic(cacheAlgosUsedLic);
+        getCacheAlgoUsedLic(cacheAlgosUsedLic);
 
-        UpdateCloudAlgosUsedLic(cacheAlgosUsedLic);
+        updateCloudAlgosUsedLic(cacheAlgosUsedLic);
         
         // TODO: get interval from conf
         sleep(30);
@@ -450,9 +450,8 @@ long LicsServer::newClientToken() {
     return tokenBase_;
 }
 
-Status LicsServer::CreateLics(ServerContext* context, 
-                const CreateLicsRequest* request, 
-                CreateLicsResponse* response) {
+
+Status LicsServer::createLics(const CreateLicsRequest* request, CreateLicsResponse* response) {
     // when SPDLOG_ACTIVE_LEVEL macro beyond SPDLOG_LEVEL_DEBUG, all SPDLOG_DEBUG will be not compiled.
     SPDLOG_DEBUG("client({0}) send lics alloc request: vendor({1}), type({2}), algorithm_id({3}), expected_lics({4})", 
                 request->token(),
@@ -489,10 +488,7 @@ Status LicsServer::CreateLics(ServerContext* context,
     return Status::OK;
 }
 
-
-Status LicsServer::DeleteLics(ServerContext* context, 
-                const DeleteLicsRequest* request, 
-                DeleteLicsResponse* response) {
+Status LicsServer::deleteLics(const DeleteLicsRequest* request, DeleteLicsResponse* response) {
     SPDLOG_DEBUG("client({0}) send lics free request: vendor({1}), type({2}), algorithm_id({3}), lics({4}), request_id({5})",
                 request->token(),
                 request->algo().vendor(),
@@ -526,19 +522,15 @@ Status LicsServer::DeleteLics(ServerContext* context,
                 response->licsnum(),
                 response->requestid(),
                 response->respcode());
-    return Status::OK;       
+    return Status::OK;                   
 }
 
-Status LicsServer::QueryLics(ServerContext* context, 
-                const QueryLicsRequest* request, 
-                QueryLicsResponse* response) {
+Status LicsServer::queryLics(const QueryLicsRequest* request, QueryLicsResponse* response) {
     //response->set_total(300);
-    return Status::OK;
+    return Status::OK;              
 }
 
-Status LicsServer::GetAuthAccess(ServerContext* context, 
-            const GetAuthAccessRequest* request, 
-            GetAuthAccessResponse* response) {
+Status LicsServer::getAuthAccess(const GetAuthAccessRequest* request, GetAuthAccessResponse* response) {
     SPDLOG_DEBUG("client({0}) send auth access request: ip({1}), port({2})",
                 request->token(),
                 request->ip(),
@@ -567,11 +559,10 @@ Status LicsServer::GetAuthAccess(ServerContext* context,
                 response->token(),
                 response->respcode());
 
-    return Status::OK;
+    return Status::OK;             
 }
 
-Status LicsServer::KeepAlive(ServerContext* context, 
-            const KeepAliveRequest* request, 
+Status LicsServer::keepAlive(const KeepAliveRequest* request, 
             KeepAliveResponse* response) {
     // check if client exist
     long clientToken = request->token();
@@ -609,7 +600,38 @@ Status LicsServer::KeepAlive(ServerContext* context,
     client->second->UpdateTimestamp();
 
     response->set_respcode(ELICS_OK);
-    return Status::OK;
+    return Status::OK;             
+}
+
+Status LicsServer::CreateLics(ServerContext* context, 
+                const CreateLicsRequest* request, 
+                CreateLicsResponse* response) {
+    return createLics(request, response);
+}
+
+
+Status LicsServer::DeleteLics(ServerContext* context, 
+                const DeleteLicsRequest* request, 
+                DeleteLicsResponse* response) {
+    return deleteLics(request, response);
+}
+
+Status LicsServer::QueryLics(ServerContext* context, 
+                const QueryLicsRequest* request, 
+                QueryLicsResponse* response) {
+    return queryLics(request, response);
+}
+
+Status LicsServer::GetAuthAccess(ServerContext* context, 
+            const GetAuthAccessRequest* request, 
+            GetAuthAccessResponse* response) {
+    return getAuthAccess(request, response);
+}
+
+Status LicsServer::KeepAlive(ServerContext* context, 
+            const KeepAliveRequest* request, 
+            KeepAliveResponse* response) {
+    return keepAlive(request, response);
 }
 
 
