@@ -47,21 +47,22 @@ typedef struct LicsEvent_s {
 
 class LicsClient {
 public:
-    LicsClient(std::shared_ptr<Channel> channel);
+    LicsClient(std::shared_ptr<Channel> channel, AlgoCapability* algoLics, int size);
     ~LicsClient();
 
     int CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp);
     int DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp);
     int GetAuthAccess();
     int KeepAlive();
-    void QueryLics();
+    //void QueryLics();
+    int GetTaskTypeFromAlgoID(int algoID, TaskType& type);
 
 protected:
-    Status createLics(CreateLicsRequest& req, CreateLicsResponse& resp);
-    Status deleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp);
-    Status getAuthAccess(const GetAuthAccessRequest& req, GetAuthAccessResponse& resp);
-    Status keepAlive(const KeepAliveRequest& req, KeepAliveResponse& resp);
-    void queryLics_();
+    virtual Status createLics(CreateLicsRequest& req, CreateLicsResponse& resp);
+    virtual Status deleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp);
+    virtual Status getAuthAccess(const GetAuthAccessRequest& req, GetAuthAccessResponse& resp);
+    virtual Status keepAlive(const KeepAliveRequest& req, KeepAliveResponse& resp);
+    //void queryLics_();
 
 private:
     void doLoop();

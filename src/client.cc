@@ -1,19 +1,123 @@
 #include "client.h"
 
-int lics_init(AlgoCapability* algoLics, int size) {
+std::atomic<bool> clientStartup_{false};
+std::shared_ptr<LicsClient> licsClient_ = nullptr;
 
+const char*lics_version() {
+    return "UNIS_LICS_CLIENT_V1.0.0";
+}
+
+int init_resource_before_client_startup() {
+    if (clientStartup_) {
+        SPDLOG_ERROR("not allowed duplicated resource init.");
+        return ELICS_DUPLICATED_RESOURCE_INIT;
+    }
+
+    clientStartup_ = true;
+    auto log = spdlog::rotating_logger_mt("client", "/var/unis/license/client/log/log.txt", 1048576 * 5, 3);
+    log->flush_on(spdlog::level::info); //set flush policy 
+    spdlog::set_default_logger(log); // set log to be defalut 
+    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v"); 
+
+    return ELICS_OK;
+}
+
+void cleanup_resource_before_client_exit() {
+    spdlog::shutdown();
+}
+
+
+/*
+* why design this fuction?
+* only used make a unit-test for lics_global_init, do not call it directoly.
+*/
+int lics_global_init_internal(const char* remote, AlgoCapability* algoLics, int size, std::shared_ptr<LicsClient> client) {
+
+    int ret = init_resource_before_client_startup();
+    if (ret != ELICS_OK) {
+        return ret;
+    }
+    
+    licsClient_ = client;
+
+    return ELICS_OK;
+}
+
+int lics_global_init(const char* remote, AlgoCapability* algoLics, int size) {
+
+    int ret = init_resource_before_client_startup();
+    if (ret != ELICS_OK) {
+        return ret;
+    }
+    
+    licsClient_ = std::make_shared<LicsClient>(grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()), algoLics, size);
 }
 
 int lics_apply(int algoID, const int expectLicsNum, int* actualLicsNum) {
+    if (!clientStartup_) {
+        SPDLOG_WARN("should call lics_global_init first.");
+        return ELICS_UNITILIZED_RESOURCE;
+    }
 
+    TaskType type;
+    int ret = licsClient_->GetTaskTypeFromAlgoID(algoID, type);
+    if (ret != ELICS_OK) {
+        SPDLOG_WARN("no exist algorithm id:{0}", ret);
+        return ret;
+    }
+
+    CreateLicsRequest createReq;
+    createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+    createReq.mutable_algo()->set_type(type);
+    createReq.mutable_algo()->set_algorithmid(algoID);
+    createReq.set_clientexpectedlicsnum(expectLicsNum);
+
+    CreateLicsResponse createResp;
+    ret = licsClient_->CreateLics(createReq, createResp);
+    if (ret != ELICS_OK) {
+        SPDLOG_WARN("apply license failed:{0}", ret);
+        return ret;
+    }
+
+    *actualLicsNum = createResp.clientgetactuallicsnum();
+
+    return ret;
 }
 
 int lics_free(int algoID, const int licsNum) {
+    if (!clientStartup_) {
+        SPDLOG_WARN("should call lics_global_init first.");
+        return ELICS_UNITILIZED_RESOURCE;
+    }
 
+    TaskType type;
+    int ret = licsClient_->GetTaskTypeFromAlgoID(algoID, type);
+    if (ret != ELICS_OK) {
+        SPDLOG_WARN("free license failed:{0}", ret);
+        return ELICS_UNKOWN_ERROR;
+    }
+
+    DeleteLicsRequest deleteReq;
+    deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+    deleteReq.mutable_algo()->set_type(type);
+    deleteReq.mutable_algo()->set_algorithmid(algoID);
+    deleteReq.set_licsnum(licsNum);
+
+    DeleteLicsResponse deleteResp;
+
+    return licsClient_->DeleteLics(deleteReq, deleteResp);
 }
 
-int lics_cleanup() {
+void lics_global_cleanup() {
+    if (!clientStartup_) {
+        return;
+    }
 
+    licsClient_.reset();
+
+    cleanup_resource_before_client_exit();
+
+    clientStartup_ = false; 
 }
 
 LicsClient::~LicsClient() {
@@ -21,49 +125,36 @@ LicsClient::~LicsClient() {
     sleep(1); // sleep for a delay to exit doLoop thread.
 }
 
+int LicsClient::GetTaskTypeFromAlgoID(int algoID, TaskType& type) {
+    //TODO: add lock
+    auto search = cache_.find(algoID);
+    if (search != cache_.end()) {
+        type = search->second->algo().type();
+        return ELICS_OK;
+    }
+    return ELICS_INVALID_PARAMS;
+}
 
-std::atomic<bool> logStartup{false};
-LicsClient::LicsClient(std::shared_ptr<Channel> channel)
+LicsClient::LicsClient(std::shared_ptr<Channel> channel, AlgoCapability* algoLics, int size)
     : stub_(License::NewStub(channel)) {
     
-    if (!logStartup) {
-        logStartup = true;
-        auto log = spdlog::rotating_logger_mt("client", "/var/unis/license/client/log/log.txt", 1048576 * 5, 3);
-        log->flush_on(spdlog::level::info); //set flush policy 
-        spdlog::set_default_logger(log); // set log to be defalut 
-        spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v"); 
+    for (int idx = 0; idx < size; ++idx) {
+        std::shared_ptr<AlgoLics> lics = std::make_shared<AlgoLics>();
+        lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+        /*
+        * why do we need a duplicated definition about type from lics_interface.h,
+        * because we have client a full isolation from  algorithm lics, it's up to
+        * app, but the trade-off is that we need to maintain the same content between
+        * AlgoLicsType and TaskType.
+        */
+        lics->mutable_algo()->set_type((TaskType)algoLics->type);
+        lics->mutable_algo()->set_algorithmid(algoLics->algoID);
+        lics->set_requestid(-1);
+        lics->set_totallics(0);
+        lics->set_usedlics(0);
+        lics->set_maxlimit(algoLics->maxLimit); // TODO: set by app
+        cache_[algoLics->algoID] = lics;
     }
-
-    // load all license into cache, depend by vendor
-    std::shared_ptr<AlgoLics> odLics = std::make_shared<AlgoLics>();
-    odLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    odLics->mutable_algo()->set_type(TaskType::VIDEO);
-    odLics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD);
-    odLics->set_requestid(-1);
-    odLics->set_totallics(0);
-    odLics->set_usedlics(0);
-    odLics->set_maxlimit(100); // TODO: set by app
-    cache_[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
-
-    std::shared_ptr<AlgoLics> faceOaLics = std::make_shared<AlgoLics>();
-    faceOaLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    faceOaLics->mutable_algo()->set_type(TaskType::PICTURE);
-    faceOaLics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);    
-    faceOaLics->set_requestid(-1);
-    faceOaLics->set_totallics(0);
-    faceOaLics->set_usedlics(0);
-    faceOaLics->set_maxlimit(200);
-    cache_[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA] = faceOaLics;
-
-    std::shared_ptr<AlgoLics> vasOaLics = std::make_shared<AlgoLics>();
-    vasOaLics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    vasOaLics->mutable_algo()->set_type(TaskType::PICTURE);
-    vasOaLics->mutable_algo()->set_algorithmid(UNIS_VAS_OA);
-    vasOaLics->set_requestid(-1);
-    vasOaLics->set_totallics(0);
-    vasOaLics->set_usedlics(0);
-    vasOaLics->set_maxlimit(300);
-    cache_[UNIS_VAS_OA] = vasOaLics;
 
     // TODO: start a doLoop thread
     std::thread t(&LicsClient::doLoop, this);
@@ -133,6 +224,7 @@ Status LicsClient::deleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) 
 }
 
 int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
+
     if (req.algo().type() == TaskType::VIDEO) {
         if (!connected_) {
             SPDLOG_INFO("disconnected to license server, please wait and retry...");

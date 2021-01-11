@@ -1,158 +1,100 @@
 #include "client.h"
 
 #include "gtest/gtest.h"
+#include <iostream>
 
-#if 0
+int lics_global_init_internal(const char* remote, AlgoCapability* algoLics, int size, std::shared_ptr<LicsClient> client);
 
-TEST(Client, Keepalive) {
-    std::string remote("localhost:50057"); 
-    LicsClient client(grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()));
+class LicsClientStub : public LicsClient {
+public:
+    LicsClientStub(std::shared_ptr<Channel> channel, AlgoCapability* algoLics, int size) : LicsClient{channel, algoLics, size} {}
+    Status createLics(CreateLicsRequest& req, CreateLicsResponse& resp) override {
+        return Status();
+    }
+    Status deleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) override {
+        return Status();
+    }
 
-    // Data we are sending to the server.
-    CreateLicsRequest createReq;
-    createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    createReq.mutable_algo()->set_type(TaskType::VIDEO);
-    createReq.mutable_algo()->set_algorithmid(UNIS_OD);
-    createReq.set_clientexpectedlicsnum(1);
+    Status getAuthAccess(const GetAuthAccessRequest& req, GetAuthAccessResponse& resp) override {
+        resp.set_token(16888);
+        return Status();
+    }
+    Status keepAlive(const KeepAliveRequest& req, KeepAliveResponse& resp) override {
+        return Status();
+    }
+};
 
-    // Container for the data we expect from the server.
-    CreateLicsResponse createResp;
+class LicsServerTests : public testing::Test {
 
-    int createTestRet = client.CreateLics(createReq, createResp);
-    ASSERT_EQ(createTestRet, ELICS_OK);
+public:
+    void SetUp() override {
+        char remote[] = "localhost:50057";
+        AlgoCapability cap[2];
+        cap[0].algoID = UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD;
+        cap[0].maxLimit = 16;
+        cap[0].type = AlgoLicsType::VIDEO;
 
-    sleep(36000);// client back-thread will do keepavlie, we just sleep here.
+        cap[1].algoID = UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA;
+        cap[1].maxLimit = 100;
+        cap[1].type = AlgoLicsType::PICTURE;
 
-}
-
-
-TEST(Video, CreateAndDeleteOdLics) {
-    std::string remote("localhost:50057"); 
-    LicsClient client(grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()));
-
-    // Data we are sending to the server.
-    CreateLicsRequest createReq;
-    createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    createReq.mutable_algo()->set_type(TaskType::VIDEO);
-    createReq.mutable_algo()->set_algorithmid(UNIS_OD);
-    createReq.set_clientexpectedlicsnum(1);
-
-    // Container for the data we expect from the server.
-    CreateLicsResponse createResp;
-
-    int createTestRet = client.CreateLics(createReq, createResp);
-    ASSERT_EQ(createTestRet, ELICS_OK);
-
-    DeleteLicsRequest deleteReq;
-    deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    deleteReq.mutable_algo()->set_type(TaskType::VIDEO);
-    deleteReq.mutable_algo()->set_algorithmid(UNIS_OD);
-    deleteReq.set_token(createResp.token());
-    deleteReq.set_licsnum(createResp.clientgetactuallicsnum());
-    DeleteLicsResponse deleteResp;
-    int deleteTestRet = client.DeleteLics(deleteReq, deleteResp);
-    ASSERT_EQ(deleteTestRet, ELICS_OK);
-
-}
-
-TEST(Video, CreateInvalidOdLics) {
-    std::string remote("localhost:50057"); 
-    LicsClient client(grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()));
-
-    // Data we are sending to the server.
-    CreateLicsRequest req;
-    req.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    req.mutable_algo()->set_type(TaskType::VIDEO);
-    req.mutable_algo()->set_algorithmid(999999); // 999999 is a invalid algorithm id.
-
-    // Container for the data we expect from the server.
-    CreateLicsResponse resp;
-
-    int ret = client.CreateLics(req, resp);
-    ASSERT_EQ(ret, ELICS_ALGO_NOT_EXIST);
-}
+        int size = 2;
+        std::shared_ptr<LicsClient>  clientStub = std::make_shared<LicsClientStub>(
+            grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()),
+            cap, 
+            size);
 
 
-TEST(Video, DeleteInvalidOdLics) {
-    std::string remote("localhost:50057"); 
-    LicsClient client(grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()));
+        int ret = lics_global_init_internal(remote, cap, 2, clientStub);
+        ASSERT_EQ(ret, ELICS_OK);
+    }
 
-    CreateLicsRequest createReq;
-    createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    createReq.mutable_algo()->set_type(TaskType::VIDEO);
-    createReq.mutable_algo()->set_algorithmid(UNIS_OD);
-    CreateLicsResponse createResp;
-    int createTestRet = client.CreateLics(createReq, createResp);
-    ASSERT_EQ(createTestRet, ELICS_OK);
+    void TearDown() {
+        lics_global_cleanup();
+    }
 
+};
+
+
+// int lics_apply(int algoID, const int expectLicsNum, int* actualLicsNum);
+
+// int lics_free(int algoID, const int licsNum);
+
+
+// const char* lics_version();
+
+
+TEST_F(LicsServerTests,LicsApplyShouldReturnOk) {
+
+    int actualLicsNum = 0;
     sleep(1);
 
-    DeleteLicsRequest deleteReq;
-    deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    deleteReq.mutable_algo()->set_type(TaskType::VIDEO);
-    deleteReq.mutable_algo()->set_algorithmid(999999);
-    deleteReq.set_token(createResp.token());
-    deleteReq.set_licsnum(createResp.clientgetactuallicsnum());
-    DeleteLicsResponse deleteResp;
-    int deleteTestRet = client.DeleteLics(deleteReq, deleteResp);
-    ASSERT_EQ(deleteTestRet, ELICS_ALGO_NOT_EXIST);
-}
+    int ret = lics_apply(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD, 10, &actualLicsNum);
+    EXPECT_EQ(ret, ELICS_OK);
 
-TEST(Video, InvalidToken) {
-    std::string remote("localhost:50057"); 
-    LicsClient client(grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()));
+    
 
-    DeleteLicsRequest deleteReq;
-    deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    deleteReq.mutable_algo()->set_type(TaskType::VIDEO);
-    deleteReq.mutable_algo()->set_algorithmid(999999);
-    deleteReq.set_token(-256); // token(-256) is not exist
-    deleteReq.set_licsnum(1);
-    DeleteLicsResponse deleteResp;
-    int deleteTestRet = client.DeleteLics(deleteReq, deleteResp);
-    ASSERT_EQ(deleteTestRet, ELICS_ALGO_NOT_EXIST);
-}
+    ret = lics_apply(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD, 10, &actualLicsNum);
+    EXPECT_EQ(ret, ELICS_OK);
 
-TEST(Picture, CreateAndDeleteFaceOaLics) {
 
 }
 
-TEST(Picture, CreateInvalidFaceOaLics) {
+// TEST_F(LicsServerTests, LicsApplyShouldReturnNok) {
+
+// }
+
+// TEST_F(LicsServerTests, LicsFreeShouldReturnOk) {
+
+// }
+
+// TEST_F(LicsServerTests, LicsFreeShouldReturnNok) {
+
+// }
+
+TEST(LicsVersion, ShouldRetrunOk) {
 
 }
-#endif
-
-TEST(Picture, CreateFaceOA) {
-    std::string remote("localhost:50057"); 
-    LicsClient client(grpc::CreateChannel(remote, grpc::InsecureChannelCredentials()));
-
-    // Data we are sending to the server.
-    CreateLicsRequest createReq;
-    createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    createReq.mutable_algo()->set_type(TaskType::PICTURE);
-    createReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
-    createReq.set_clientexpectedlicsnum(1);
-
-    // Container for the data we expect from the server.
-    CreateLicsResponse createResp;
-
-    int createTestRet = client.CreateLics(createReq, createResp);
-    ASSERT_EQ(createTestRet, ELICS_OK);
-    ASSERT_EQ(createResp.clientgetactuallicsnum(), 1);
-
-    sleep(5);
-
-    DeleteLicsRequest deleteReq;
-    deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-    deleteReq.mutable_algo()->set_type(TaskType::PICTURE);
-    deleteReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
-    deleteReq.set_token(createResp.token());
-    deleteReq.set_licsnum(createResp.clientgetactuallicsnum());
-    DeleteLicsResponse deleteResp;
-    int deleteTestRet = client.DeleteLics(deleteReq, deleteResp);
-    ASSERT_EQ(deleteTestRet, ELICS_OK);
-}
-
 
 
 int main(int argc, char **argv) {

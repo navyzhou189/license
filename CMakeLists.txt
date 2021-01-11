@@ -74,7 +74,7 @@ set(_GRPC_GRPCPP gRPC::grpc++)
 set(LOGGER "spdlog::spdlog")
 set(GTEST "gtest")
 
-set(ClientTarget "TestLicenseClient")
+set(ClientTarget "ClientTest")
 set(ClientTestMain "test/client_test.cc")
 set(ClientSrc "src/client.cc")
 add_executable(${ClientTarget} 
@@ -90,7 +90,7 @@ target_link_libraries(${ClientTarget}
     ${GTEST})
 
 
-set(ServerTarget "TestLicenseServer")
+set(ServerTarget "ServerTest")
 set(ServerTestMain "test/server_test.cc")
 set(ServerSrc "src/server.cc")
 set(HttpSrc "src/http.cc")
