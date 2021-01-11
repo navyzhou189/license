@@ -214,7 +214,7 @@ std::shared_ptr<ServerConf> getServerConf() {
 std::string("http://" + getServerConf()->GetItem("cloud") + "/api/vcloud/v2/license/authinfos")\
 }
 
-void LicsServer::fetchCloudAlgosTotalLic(std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic){
+void LicsServer::fetchAlgosTotalLicFromCloud(std::map<long, std::shared_ptr<AlgoLics>>& remote){
     std::string reply;
     if (getHttpClient()->Get(FETCH_ALGOS_TOTAL_LICS_URL, reply) != EHTTP_OK)
         return;
@@ -330,24 +330,24 @@ void LicsServer::fetchCloudAlgosTotalLic(std::map<long, std::shared_ptr<AlgoLics
     odLics->set_totallics(numOfFacePersonVehicleNonOD);
     
 
-    remoteAlgosTotalLic[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA] = oaLics;
-    remoteAlgosTotalLic[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
+    remote[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA] = oaLics;
+    remote[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
 
 }
 
-void LicsServer::updateCloudAlgosUsedLic(const std::map<long, std::shared_ptr<AlgoLics>>& licenseQ) {
+void LicsServer::pushAlgosUsedLicToCloud(const std::map<long, std::shared_ptr<AlgoLics>>& local) {
 
 }
 
 
-void LicsServer::updateCacheAlgosTotalLic(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic) {
+void LicsServer::updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic) {
     // TODO: add lock
     for (const auto &remote : remoteAlgosTotalLic) {
         licenseQ[remote.first]->set_totallics(remote.second->totallics());
     }
 }
 
-void LicsServer::getCacheAlgoUsedLic(std::map<long, std::shared_ptr<AlgoLics>>& cacheAlgosUsedLic) {
+void LicsServer::getLocalLics(std::map<long, std::shared_ptr<AlgoLics>>& local) {
 
 }
 
@@ -378,14 +378,14 @@ void LicsServer::doLoop() {
 
         // TODO: call vcloud api to update license.
         std::map<long, std::shared_ptr<AlgoLics>> remoteAlgosTotalLic;
-        fetchCloudAlgosTotalLic(remoteAlgosTotalLic);
+        fetchAlgosTotalLicFromCloud(remoteAlgosTotalLic);
 
-        updateCacheAlgosTotalLic(remoteAlgosTotalLic);
+        updateLocalLics(remoteAlgosTotalLic);
 
         std::map<long, std::shared_ptr<AlgoLics>> cacheAlgosUsedLic;
-        getCacheAlgoUsedLic(cacheAlgosUsedLic);
+        getLocalLics(cacheAlgosUsedLic);
 
-        updateCloudAlgosUsedLic(cacheAlgosUsedLic);
+        pushAlgosUsedLicToCloud(cacheAlgosUsedLic);
         
         // TODO: get interval from conf
         sleep(30);
@@ -654,20 +654,4 @@ void RunServer() {
     // Wait for the server to shutdown. Note that some other thread must be
     // responsible for shutting down the server for this call to ever return.
     server->Wait();
-}
-
-void SetLog() {
-    auto log = spdlog::rotating_logger_mt("server", getServerConf()->GetItem("log"), 1048576 * 5, 3);
-    log->flush_on(spdlog::level::debug); //set flush policy 
-    spdlog::set_default_logger(log); // set log to be defalut 
-    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v");   
-    spdlog::set_level(spdlog::level::debug);
-}
-
-int main(int argc, char** argv)
-{
-    SetLog();
-    RunServer();
-
-    return 0;
 }

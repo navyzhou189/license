@@ -89,21 +89,19 @@ private:
     int licsAlloc(long token, long algoID, int expected);
     int licsFree(long token, long algoID, int expected);
     void doLoop();
-    void updateCacheAlgosTotalLic(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic);
-    void getCacheAlgoUsedLic(std::map<long, std::shared_ptr<AlgoLics>>& cacheAlgosUsedLic);
-    void updateCloudAlgosUsedLic(const std::map<long, std::shared_ptr<AlgoLics>>& licenseQ);
-    void fetchCloudAlgosTotalLic(std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic);
 
-    Status createLics(const CreateLicsRequest* request, 
-                    CreateLicsResponse* response);
-    Status deleteLics(const DeleteLicsRequest* request, 
-                    DeleteLicsResponse* response);
-    Status queryLics(const QueryLicsRequest* request, 
-                    QueryLicsResponse* response);
-    Status getAuthAccess(const GetAuthAccessRequest* request, 
-                GetAuthAccessResponse* response);
-    Status keepAlive(const KeepAliveRequest* request, 
-                KeepAliveResponse* response);
+protected:
+    // inherited TEST-Class could call these functions
+    Status createLics(const CreateLicsRequest* request, CreateLicsResponse* response);
+    Status deleteLics(const DeleteLicsRequest* request, DeleteLicsResponse* response);
+    Status queryLics(const QueryLicsRequest* request, QueryLicsResponse* response);
+    Status getAuthAccess(const GetAuthAccessRequest* request,  GetAuthAccessResponse* response);
+    Status keepAlive(const KeepAliveRequest* request, KeepAliveResponse* response);
+
+    void updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remote);
+    void getLocalLics(std::map<long, std::shared_ptr<AlgoLics>>& local);
+    void pushAlgosUsedLicToCloud(const std::map<long, std::shared_ptr<AlgoLics>>& local);
+    void fetchAlgosTotalLicFromCloud(std::map<long, std::shared_ptr<AlgoLics>>& remote);
 
 private:
     long tokenBase_{0};// TODO:: lock contention

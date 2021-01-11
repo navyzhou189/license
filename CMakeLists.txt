@@ -92,7 +92,7 @@ target_link_libraries(${ClientTarget}
 
 set(ServerTarget "TestLicenseServer")
 set(ServerTestMain "test/server_test.cc")
-#set(ServerSrc "src/server.cc")
+set(ServerSrc "src/server.cc")
 set(HttpSrc "src/http.cc")
 add_executable(${ServerTarget} ${ServerSrc} 
     ${ServerTestMain}
