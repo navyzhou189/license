@@ -13,7 +13,7 @@ int lics_free(int algoID, const int licsNum) {
 }
 
 int lics_cleanup() {
-    
+
 }
 
 LicsClient::~LicsClient() {
@@ -72,6 +72,15 @@ LicsClient::LicsClient(std::shared_ptr<Channel> channel)
     sleep(1);// have doLoop ready to handle all event.
 }
 
+Status LicsClient::createLics(CreateLicsRequest& req, CreateLicsResponse& resp){
+    // Context for the client. It could be used to convey extra information to
+    // the server and/or tweak certain RPC behaviors.
+    ClientContext context;
+
+    // The actual RPC.
+    return stub_->CreateLics(&context, req, &resp);
+}
+
 int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
     if (!connected_) {
         SPDLOG_INFO("disconnected to license server, please wait and retry...");
@@ -83,12 +92,7 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
 
         req.set_token(getToken());
 
-        // Context for the client. It could be used to convey extra information to
-        // the server and/or tweak certain RPC behaviors.
-        ClientContext context;
-
-        // The actual RPC.
-        Status status = stub_->CreateLics(&context, req, &resp);
+        Status status = createLics(req, resp);
 
         // Act upon its status. 
         // TODO: function is timeout or other error.
@@ -122,6 +126,12 @@ int LicsClient::CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp){
     return ELICS_UNKOWN_ERROR;   
 }
 
+
+Status LicsClient::deleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
+    ClientContext context;
+    return stub_->DeleteLics(&context, req, &resp);
+}
+
 int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
     if (req.algo().type() == TaskType::VIDEO) {
         if (!connected_) {
@@ -131,8 +141,9 @@ int LicsClient::DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp) {
         }
 
         req.set_token(getToken());
-        ClientContext context;
-        Status status = stub_->DeleteLics(&context, req, &resp);
+        
+        Status status = deleteLics(req, resp);
+
         if (status.ok()) {
             return ELICS_OK;
         } else {
@@ -176,12 +187,16 @@ void LicsClient::setToken(long token) {
     token_ = token;
 }
 
-int LicsClient::getAuthAccess() {
+Status LicsClient::getAuthAccess(const GetAuthAccessRequest& req, GetAuthAccessResponse& resp) {
+    ClientContext context;
+    return stub_->GetAuthAccess(&context, req, &resp);
+}
+
+int LicsClient::GetAuthAccess() {
     GetAuthAccessRequest req;
     req.set_token(getToken());
     GetAuthAccessResponse resp;
-    ClientContext context;
-    Status status = stub_->GetAuthAccess(&context, req, &resp);
+    Status status = getAuthAccess(req, resp);
     if (status.ok()) {
         SPDLOG_INFO(" get accessed token: {0} ok", resp.token());
         setToken(resp.token());
@@ -191,12 +206,15 @@ int LicsClient::getAuthAccess() {
     return status.error_code();
 }
 
+Status LicsClient::keepAlive(const KeepAliveRequest& req, KeepAliveResponse& resp) {
+    ClientContext context;
+    return stub_->KeepAlive(&context, req, &resp);
+}
 
-int LicsClient::keepAlive() {
+int LicsClient::KeepAlive() {
     KeepAliveRequest req;
     KeepAliveResponse resp;
-    ClientContext context;
-
+    
     req.set_token(getToken());
     // upload picture lics to server
     for(auto iter : cache_) { 
@@ -211,7 +229,7 @@ int LicsClient::keepAlive() {
         lics->mutable_algo()->set_algorithmid(iter.second->algo().algorithmid());
     }
 
-    Status status = stub_->KeepAlive(&context, req, &resp);
+    Status status = keepAlive(req, resp);
 
     // TODO: parse the response, 
     if (status.ok()) {
@@ -258,7 +276,7 @@ void LicsClient::doLoop() {
     while (running_) {
 
         // send authentication request to license server
-        if (ELICS_OK != getAuthAccess()) { // bug to be fixed: make getAuthAcess being automical operation
+        if (ELICS_OK != GetAuthAccess()) { // bug to be fixed: make getAuthAcess being automical operation
             // TODO: sleep strategy
             continue;
         }
@@ -271,7 +289,7 @@ void LicsClient::doLoop() {
             
 
             // TODO: send keepavlie request to license server with license cache.
-            int ret = keepAlive();
+            int ret = KeepAlive();
             if (ret != ELICS_OK) {
                 SPDLOG_ERROR("keepAlive has a error: {0}", ret);
                 connected_ = false; // bug to be fixed

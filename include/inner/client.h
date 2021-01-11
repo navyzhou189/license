@@ -52,11 +52,18 @@ public:
 
     int CreateLics(CreateLicsRequest& req, CreateLicsResponse& resp);
     int DeleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp);
+    int GetAuthAccess();
+    int KeepAlive();
     void QueryLics();
 
+protected:
+    Status createLics(CreateLicsRequest& req, CreateLicsResponse& resp);
+    Status deleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp);
+    Status getAuthAccess(const GetAuthAccessRequest& req, GetAuthAccessResponse& resp);
+    Status keepAlive(const KeepAliveRequest& req, KeepAliveResponse& resp);
+    void queryLics_();
+
 private:
-    int getAuthAccess();
-    int keepAlive();
     void doLoop();
     std::shared_ptr<LicsEvent> dequeue(); // TODO: make LicsEvent to be  a template
     void enqueue(std::shared_ptr<LicsEvent> t);
