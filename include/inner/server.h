@@ -9,6 +9,8 @@
 #include <memory>
 #include <string>
 #include <unistd.h>
+#include <mutex>
+#include <condition_variable>
 #include <thread>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
@@ -41,6 +43,20 @@ using UnisAlgoLics::TaskType;
 using UnisAlgoLics::AlgoLics;
 using UnisAlgoLics::Vendor;
 
+enum LicsServerEventType {
+    EXIT = 0,
+};
+
+class LicsServerEvent {
+public:
+    LicsServerEvent(LicsServerEventType type) : type_(type) {}
+
+    LicsServerEventType GetEventType() { return type_; }
+
+private:
+    LicsServerEventType type_;
+};
+
 class Client {
 
 public:
@@ -65,6 +81,7 @@ private:
 class LicsServer : public License::Service {
 public:
 LicsServer();
+~LicsServer();
 
 void Shutdown();
 
@@ -90,6 +107,12 @@ private:
     int licsFree(long token, long algoID, int expected);
     void doLoop();
 
+    void signalExit();
+    std::shared_ptr<LicsServerEvent> dequeue();
+    void enqueue(std::shared_ptr<LicsServerEvent> t);
+    bool empty();
+    bool gotExitSignal(std::shared_ptr<LicsServerEvent> t);
+
 protected:
     // inherited TEST-Class could call these functions
     Status createLics(const CreateLicsRequest* request, CreateLicsResponse* response);
@@ -98,16 +121,24 @@ protected:
     Status getAuthAccess(const GetAuthAccessRequest* request,  GetAuthAccessResponse* response);
     Status keepAlive(const KeepAliveRequest* request, KeepAliveResponse* response);
 
-    void updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remote);
-    void getLocalLics(std::map<long, std::shared_ptr<AlgoLics>>& local);
-    void pushAlgosUsedLicToCloud(const std::map<long, std::shared_ptr<AlgoLics>>& local);
-    void fetchAlgosTotalLicFromCloud(std::map<long, std::shared_ptr<AlgoLics>>& remote);
+    void licsQuery(long token, long algoID, int& total, int& used);
+
+    // test class will override the following methods.
+    virtual void updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remote);
+    virtual void getLocalLics(std::map<long, std::shared_ptr<AlgoLics>>& local);
+    virtual void pushAlgosUsedLicToCloud(const std::map<long, std::shared_ptr<AlgoLics>>& local);
+    virtual void fetchAlgosTotalLicFromCloud(std::map<long, std::shared_ptr<AlgoLics>>& remote);
 
 private:
     long tokenBase_{0};// TODO:: lock contention
     std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
     std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
     std::atomic<bool> running_{true};
+
+    std::list<std::shared_ptr<LicsServerEvent>> event_;
+
+    std::mutex mtx_of_event_;
+    std::condition_variable cv_of_event_;
 };
 
 

@@ -22,11 +22,7 @@ void RunServer() {
 }
 
 void SetLog() {
-    auto log = spdlog::rotating_logger_mt("server", getServerConf()->GetItem("log"), 1048576 * 5, 3);
-    log->flush_on(spdlog::level::debug); //set flush policy 
-    spdlog::set_default_logger(log); // set log to be defalut 
-    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v");   
-    spdlog::set_level(spdlog::level::debug);
+
 }
 
 int main(int argc, char** argv)

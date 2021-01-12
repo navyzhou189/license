@@ -80,6 +80,28 @@ private:
 
 };
 
+static std::mutex mtxOfLics;
+static std::shared_ptr<HttpClient> httpClientOfLics = nullptr;
+static std::shared_ptr<ServerConf> srvConfOfLics = nullptr;
+
+std::shared_ptr<HttpClient> getHttpClient() {
+    std::lock_guard<std::mutex> lk(mtxOfLics);
+    if (!httpClientOfLics) {
+        httpClientOfLics = std::make_shared<HttpClient>();
+    }
+
+    return httpClientOfLics;
+}
+
+std::shared_ptr<ServerConf> getServerConf() {
+    std::lock_guard<std::mutex> lk(mtxOfLics);
+    if (!srvConfOfLics) {
+        srvConfOfLics = std::make_shared<ServerConf>(SERVER_CONF_FILE);
+    }
+
+    return srvConfOfLics;
+}
+
 long GetTimeSecsFromEpoch() {
     std::time_t result = std::time(nullptr);
     return result;
@@ -146,6 +168,11 @@ void Client::DecUsedLics(long algoID, int num) {
 }
 
 LicsServer::LicsServer() {
+    auto log = spdlog::rotating_logger_mt("server", getServerConf()->GetItem("log"), 1048576 * 5, 3);
+    log->flush_on(spdlog::level::debug); //set flush policy 
+    spdlog::set_default_logger(log); // set log to be defalut 
+    spdlog::set_pattern("%Y-%m-%d %H:%M:%S.%e %l [%s:%!:%#] %v");   
+    spdlog::set_level(spdlog::level::debug);
 
     // load all license into cache, depend by vendor
     std::shared_ptr<AlgoLics> odLics = std::make_shared<AlgoLics>();
@@ -182,32 +209,11 @@ LicsServer::LicsServer() {
     t.detach();
 }
 
-void LicsServer::Shutdown() {
+LicsServer::~LicsServer() {
     running_ = false;
     // TODO: sleep for a delay to shutdown server.
-}
-
-
-static std::mutex mtxOfLics;
-static std::shared_ptr<HttpClient> httpClientOfLics = nullptr;
-static std::shared_ptr<ServerConf> srvConfOfLics = nullptr;
-
-std::shared_ptr<HttpClient> getHttpClient() {
-    std::lock_guard<std::mutex> lk(mtxOfLics);
-    if (!httpClientOfLics) {
-        httpClientOfLics = std::make_shared<HttpClient>();
-    }
-
-    return httpClientOfLics;
-}
-
-std::shared_ptr<ServerConf> getServerConf() {
-    std::lock_guard<std::mutex> lk(mtxOfLics);
-    if (!srvConfOfLics) {
-        srvConfOfLics = std::make_shared<ServerConf>(SERVER_CONF_FILE);
-    }
-
-    return srvConfOfLics;
+    SPDLOG_ERROR("got exit, bye");
+    spdlog::shutdown();// exit log
 }
 
 #define FETCH_ALGOS_TOTAL_LICS_URL  {\
@@ -216,8 +222,12 @@ std::string("http://" + getServerConf()->GetItem("cloud") + "/api/vcloud/v2/lice
 
 void LicsServer::fetchAlgosTotalLicFromCloud(std::map<long, std::shared_ptr<AlgoLics>>& remote){
     std::string reply;
-    if (getHttpClient()->Get(FETCH_ALGOS_TOTAL_LICS_URL, reply) != EHTTP_OK)
+    int ret = getHttpClient()->Get(FETCH_ALGOS_TOTAL_LICS_URL, reply);
+    if ( ret != EHTTP_OK) {
+        SPDLOG_ERROR("GET from cloud have a error:{0}", ret);
         return;
+    }
+        
 
     SPDLOG_DEBUG("GET from cloud:{0}", reply.c_str());
 
@@ -351,8 +361,72 @@ void LicsServer::getLocalLics(std::map<long, std::shared_ptr<AlgoLics>>& local) 
 
 }
 
+void LicsServer::Shutdown() {
+    signalExit();
+}
+
+void LicsServer::signalExit() {
+    std::shared_ptr<LicsServerEvent> t = std::make_shared<LicsServerEvent>(LicsServerEventType::EXIT);
+    enqueue(t);
+}
+
+bool LicsServer::empty() {
+    if (event_.size() == 0) {
+        return true;
+    }
+
+    return false;
+}
+
+std::shared_ptr<LicsServerEvent> LicsServer::dequeue() {
+    std::unique_lock<std::mutex> lk(mtx_of_event_);
+    if (cv_of_event_.wait_for(lk,std::chrono::milliseconds(100), [&]{return !empty();})) {
+
+        std::shared_ptr<LicsServerEvent> ev = std::move(event_.front());
+        event_.pop_front();
+        return ev;
+    } else {
+        return nullptr;
+    }
+}
+
+void LicsServer::enqueue(std::shared_ptr<LicsServerEvent> t) {
+    {
+        // bug to be fixed: mutex will block the client, we will fixed during some time in future.
+        std::lock_guard<std::mutex> lk(mtx_of_event_);
+
+        // TODO: push into queue
+        event_.push_back(t);
+    }
+    
+    cv_of_event_.notify_one(); // does not need lock to hold for notification.
+}
+
+bool LicsServer::gotExitSignal(std::shared_ptr<LicsServerEvent> t) {
+
+    if (t) {
+        if (t->GetEventType() == LicsServerEventType::EXIT) {
+            return true;
+        }
+    }
+
+    return false;
+    
+}
+
 void LicsServer::doLoop() {
     while (running_) {
+
+        std::shared_ptr<LicsServerEvent> ev = dequeue();
+        if (ev) {
+            // TODO : send delete license request 
+            if (gotExitSignal(ev)) {
+                return;
+            }
+
+            // TODO: if failed , push the event to queue.
+            // else update license cache about video
+        }
 
         long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
         for (auto client = clientQ.begin(); client != clientQ.end();) {
@@ -388,9 +462,30 @@ void LicsServer::doLoop() {
         pushAlgosUsedLicToCloud(cacheAlgosUsedLic);
         
         // TODO: get interval from conf
-        sleep(30);
+    
 
     }
+}
+
+void LicsServer::licsQuery(long token, long algoID, int& total, int& used) {
+    total = 0;
+    used = 0;
+    // add lock
+    auto client = clientQ.find(token); // search client
+    if (client == clientQ.end()) {
+        // TODO: add log print
+        return ;
+    }
+
+    auto algo = licenseQ.find(algoID);
+    if (algo == licenseQ.end()) {
+        // TODO: add log print
+        return ;
+    }
+
+    // get total and used lics by algorithm id
+    total = algo->second->totallics();
+    used = algo->second->usedlics();
 }
 
 int LicsServer::licsAlloc(long token, long algoID, int expected) {

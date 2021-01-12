@@ -119,6 +119,7 @@ void lics_global_cleanup() {
 
 LicsClient::~LicsClient() {
     running_= false;
+    SPDLOG_ERROR("got exit, bye");
     spdlog::shutdown();// exit log
 }
 
@@ -129,7 +130,7 @@ int LicsClient::GetTaskTypeFromAlgoID(int algoID, TaskType& type) {
         type = search->second->algo().type();
         return ELICS_OK;
     }
-    return ELICS_INVALID_PARAMS;
+    return ELICS_ALGO_NOT_EXIST;
 }
 
 LicsClient::LicsClient(std::shared_ptr<Channel> channel, AlgoCapability* algoLics, int size)
