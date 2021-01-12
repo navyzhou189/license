@@ -41,9 +41,20 @@ using UnisAlgoLics::TaskType;
 using UnisAlgoLics::AlgoLics;
 using UnisAlgoLics::Vendor;
 
-typedef struct LicsEvent_s {
-    int id;
-}LicsEvent;
+enum LicsClientEventType {
+    EXIT = 0,
+};
+
+class LicsClientEvent {
+public:
+    LicsClientEvent(LicsClientEventType type, int id = -1) : type_(type), id_(id) {}
+
+    LicsClientEventType GetEventType() { return type_; }
+
+private:
+    LicsClientEventType type_;
+    int id_;
+};
 
 class LicsClient {
 public:
@@ -57,6 +68,8 @@ public:
     //void QueryLics();
     int GetTaskTypeFromAlgoID(int algoID, TaskType& type);
 
+    void Stop();
+
 protected:
     virtual Status createLics(CreateLicsRequest& req, CreateLicsResponse& resp);
     virtual Status deleteLics(DeleteLicsRequest& req, DeleteLicsResponse& resp);
@@ -66,9 +79,12 @@ protected:
 
 private:
     void doLoop();
-    std::shared_ptr<LicsEvent> dequeue(); // TODO: make LicsEvent to be  a template
-    void enqueue(std::shared_ptr<LicsEvent> t);
+    std::shared_ptr<LicsClientEvent> dequeue(); // TODO: make LicsClientEvent to be  a template
+    void enqueue(std::shared_ptr<LicsClientEvent> t);
     bool empty();
+
+    void signalExit();// signal work thread to exit.
+    bool gotExitSignal(std::shared_ptr<LicsClientEvent> t);
 
     long getToken();
     void setToken(long token);
@@ -84,7 +100,7 @@ private:
     std::atomic<bool> connected_ {false}; // license server receving client request.
     std::atomic<bool> running_{true};
 
-    std::list<std::shared_ptr<LicsEvent>> event_;
+    std::list<std::shared_ptr<LicsClientEvent>> event_;
 
     /*
     this mutex is used for the following purposes:
