@@ -211,7 +211,7 @@ LicsServer::LicsServer() {
 
 LicsServer::~LicsServer() {
     running_ = false;
-    // TODO: sleep for a delay to shutdown server.
+    sleep(1);
     SPDLOG_ERROR("got exit, bye");
     spdlog::shutdown();// exit log
 }
@@ -351,7 +351,7 @@ void LicsServer::pushAlgosUsedLicToCloud(const std::map<long, std::shared_ptr<Al
 
 
 void LicsServer::updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic) {
-    // TODO: add lock
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
     for (const auto &remote : remoteAlgosTotalLic) {
         licenseQ[remote.first]->set_totallics(remote.second->totallics());
     }
@@ -379,7 +379,7 @@ bool LicsServer::empty() {
 }
 
 std::shared_ptr<LicsServerEvent> LicsServer::dequeue() {
-    std::unique_lock<std::mutex> lk(mtx_of_event_);
+    std::unique_lock<std::mutex> lk(exclusive_write_or_read_event);
     if (cv_of_event_.wait_for(lk,std::chrono::milliseconds(100), [&]{return !empty();})) {
 
         std::shared_ptr<LicsServerEvent> ev = std::move(event_.front());
@@ -393,7 +393,7 @@ std::shared_ptr<LicsServerEvent> LicsServer::dequeue() {
 void LicsServer::enqueue(std::shared_ptr<LicsServerEvent> t) {
     {
         // bug to be fixed: mutex will block the client, we will fixed during some time in future.
-        std::lock_guard<std::mutex> lk(mtx_of_event_);
+        std::lock_guard<std::mutex> lk(exclusive_write_or_read_event);
 
         // TODO: push into queue
         event_.push_back(t);
@@ -414,6 +414,32 @@ bool LicsServer::gotExitSignal(std::shared_ptr<LicsServerEvent> t) {
     
 }
 
+void LicsServer::clearDeadClients() {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+
+    long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
+    for (auto client = clientQ.begin(); client != clientQ.end();) {
+            // check if the client keep alive
+        long clientTime = client->second->GetLatestTimestamp();
+        
+        long diff = sysTime >= clientTime ? sysTime - clientTime : 0; // TODO: mark the client died if sysTime < clientTime.
+        // TODO: get timeout from conf
+        if (diff > 30) {
+            // make the continusKeepAliveFailedCnt plus plus
+            client->second->IncHeartbeatTimeoutCnt();
+            SPDLOG_INFO("client({0}) hearbeat timeout reach {1}", client->first, client->second->HeartbeatTimeoutCnt());
+        }
+
+        if (!client->second->Alive()) {
+            // TODO:delete client and release used lics
+            SPDLOG_INFO("detect heatbeat-stoped client. remove token:{0}", client->second->GetToken());
+            client = clientQ.erase(client);
+        } else {
+            ++client;
+        }
+    }
+}
+
 void LicsServer::doLoop() {
     while (running_) {
 
@@ -428,27 +454,7 @@ void LicsServer::doLoop() {
             // else update license cache about video
         }
 
-        long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
-        for (auto client = clientQ.begin(); client != clientQ.end();) {
-             // check if the client keep alive
-            long clientTime = client->second->GetLatestTimestamp();
-            
-            long diff = sysTime >= clientTime ? sysTime - clientTime : 0; // TODO: mark the client died if sysTime < clientTime.
-            // TODO: get timeout from conf
-            if (diff > 30) {
-                // make the continusKeepAliveFailedCnt plus plus
-                client->second->IncHeartbeatTimeoutCnt();
-                SPDLOG_INFO("client({0}) hearbeat timeout reach {1}", client->first, client->second->HeartbeatTimeoutCnt());
-            }
-
-            if (!client->second->Alive()) {
-                // TODO:delete client and release used lics
-                SPDLOG_INFO("detect heatbeat-stoped client. remove token:{0}", client->second->GetToken());
-                client = clientQ.erase(client);
-            } else {
-                ++client;
-            }
-        }
+        clearDeadClients();
 
         // TODO: call vcloud api to update license.
         std::map<long, std::shared_ptr<AlgoLics>> remoteAlgosTotalLic;
@@ -468,6 +474,7 @@ void LicsServer::doLoop() {
 }
 
 void LicsServer::licsQuery(long token, long algoID, int& total, int& used) {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
     total = 0;
     used = 0;
     // add lock
@@ -489,17 +496,17 @@ void LicsServer::licsQuery(long token, long algoID, int& total, int& used) {
 }
 
 int LicsServer::licsAlloc(long token, long algoID, int expected) {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
 
-    // add lock
     auto client = clientQ.find(token); // search client
     if (client == clientQ.end()) {
-        // TODO: add log print
+        SPDLOG_WARN("no exist user token:{0}", token);
         return 0;
     }
 
     auto algo = licenseQ.find(algoID);
     if (algo == licenseQ.end()) {
-        // TODO: add log print
+        SPDLOG_WARN("no exist algorithm id:{0}", algoID);
         return 0;
     }
 
@@ -516,16 +523,17 @@ int LicsServer::licsAlloc(long token, long algoID, int expected) {
 
 int LicsServer::licsFree(long token, long algoID, int expected) { 
 
-    // add lock
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+
     auto client = clientQ.find(token); // search client
     if (client == clientQ.end()) {
-        // TODO: add log print
+        SPDLOG_WARN("no exist user token:{0}", token);
         return 0;
     }
 
     auto algo = licenseQ.find(algoID);
     if (algo == licenseQ.end()) {
-        // TODO: add log print
+        SPDLOG_WARN("no exist algorithm id:{0}", algoID);
         return 0;
     }
 
@@ -555,12 +563,6 @@ Status LicsServer::createLics(const CreateLicsRequest* request, CreateLicsRespon
                 request->algo().algorithmid(),
                 request->clientexpectedlicsnum());
     long clientToken = request->token();
-    auto client = clientQ.find(clientToken);
-    if (client == clientQ.end()) {
-        response->set_respcode(ELICS_CLIENT_NOT_EXIST);
-        return Status::OK;
-    }
-
     response->set_token(clientToken);
     response->set_requestid(0);// to be fixed
     response->mutable_algo()->set_vendor(request->algo().vendor());
@@ -592,12 +594,6 @@ Status LicsServer::deleteLics(const DeleteLicsRequest* request, DeleteLicsRespon
                 request->licsnum(),
                 request->requestid());
     long clientToken = request->token();
-    auto client = clientQ.find(clientToken);
-    if (client == clientQ.end()) {
-        response->set_respcode(ELICS_CLIENT_NOT_EXIST);
-        return Status::OK;
-    }
-
     response->set_token(clientToken);
     response->set_requestid(0);// to be fixed
     response->mutable_algo()->set_vendor(request->algo().vendor());
@@ -626,6 +622,8 @@ Status LicsServer::queryLics(const QueryLicsRequest* request, QueryLicsResponse*
 }
 
 Status LicsServer::getAuthAccess(const GetAuthAccessRequest* request, GetAuthAccessResponse* response) {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+
     SPDLOG_DEBUG("client({0}) send auth access request: ip({1}), port({2})",
                 request->token(),
                 request->ip(),
@@ -659,6 +657,7 @@ Status LicsServer::getAuthAccess(const GetAuthAccessRequest* request, GetAuthAcc
 
 Status LicsServer::keepAlive(const KeepAliveRequest* request, 
             KeepAliveResponse* response) {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
     // check if client exist
     long clientToken = request->token();
 

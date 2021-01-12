@@ -112,6 +112,7 @@ private:
     void enqueue(std::shared_ptr<LicsServerEvent> t);
     bool empty();
     bool gotExitSignal(std::shared_ptr<LicsServerEvent> t);
+    void clearDeadClients();
 
 protected:
     // inherited TEST-Class could call these functions
@@ -130,14 +131,14 @@ protected:
     virtual void fetchAlgosTotalLicFromCloud(std::map<long, std::shared_ptr<AlgoLics>>& remote);
 
 private:
-    long tokenBase_{0};// TODO:: lock contention
+    std::atomic<long> tokenBase_{0};// TODO:: lock contention
     std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
     std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
+    std::mutex exclusive_write_or_read_license; // used to prevent multiple thread read or write licenseQ and clientQ
     std::atomic<bool> running_{true};
 
     std::list<std::shared_ptr<LicsServerEvent>> event_;
-
-    std::mutex mtx_of_event_;
+    std::mutex exclusive_write_or_read_event;
     std::condition_variable cv_of_event_;
 };
 

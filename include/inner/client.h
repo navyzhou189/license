@@ -107,7 +107,7 @@ private:
     1. keep synchronization primitive access to queue, like enqueue or dequeue;
     2. for the condition variable :cv_of_event_
     */
-    std::mutex mtx_of_event_;
+    std::mutex exclusive_write_or_read_event;
     std::condition_variable cv_of_event_;
 };
 

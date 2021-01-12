@@ -364,7 +364,7 @@ void LicsClient::signalExit() {
 }
 
 std::shared_ptr<LicsClientEvent> LicsClient::dequeue() {
-    std::unique_lock<std::mutex> lk(mtx_of_event_);
+    std::unique_lock<std::mutex> lk(exclusive_write_or_read_event);
     if (cv_of_event_.wait_for(lk,std::chrono::milliseconds(100), [&]{return !empty();})) {
 
         std::shared_ptr<LicsClientEvent> ev = std::move(event_.front());
@@ -378,7 +378,7 @@ std::shared_ptr<LicsClientEvent> LicsClient::dequeue() {
 void LicsClient::enqueue(std::shared_ptr<LicsClientEvent> t) {
     {
         // bug to be fixed: mutex will block the client, we will fixed during some time in future.
-        std::lock_guard<std::mutex> lk(mtx_of_event_);
+        std::lock_guard<std::mutex> lk(exclusive_write_or_read_event);
 
         // TODO: push into queue
         event_.push_back(t);

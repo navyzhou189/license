@@ -231,14 +231,18 @@ TEST_F(LicsServerTests, KeepAliveShouldFail) {
 
 // performance tests
 TEST_F(LicsServerTests, 1000ClientCreateAndDelete10VideoLicsFor10Times) {
-  std::thread t[1000];
 
-  for (int idx = 0; idx < 1000; ++idx) {
-      t[idx] =  std::thread(&LicsServerTests::CreateAndDelete10OdLic, this);
-  }  
-  for (int idx = 0; idx < 1000; ++idx) {
-      t[idx].join();
+  for (int cnt = 0; cnt < 10; ++cnt) {
+      std::thread t[1000];
+
+      for (int tidx = 0; tidx < 1000; ++tidx) {
+          t[tidx] =  std::thread(&LicsServerTests::CreateAndDelete10OdLic, this);
+      }  
+      for (int tidx = 0; tidx < 1000; ++tidx) {
+          t[tidx].join();
+      }
   }
+
 }
 
 TEST_F(LicsServerTests, 1000ClientCreateAndDelete10PictureLicsFor10Times) {
