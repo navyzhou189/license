@@ -38,6 +38,37 @@ class LicsServerTests : public testing::Test, public LicsServer {
         remote[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
     }
 
+public:
+  void CreateAndDelete10OdLic() {
+    GetAuthAccessRequest authReq;
+    GetAuthAccessResponse authResp;
+
+    Status ret = getAuthAccess(&authReq,  &authResp);
+    EXPECT_TRUE(ret.ok());
+
+
+    CreateLicsRequest createReq;
+    CreateLicsResponse createResp;
+
+    createReq.set_token(authResp.token());
+    createReq.set_clientexpectedlicsnum(10);
+    createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+    createReq.mutable_algo()->set_type(TaskType::VIDEO);
+    createReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD);
+    ret = createLics(&createReq, &createResp);
+    EXPECT_TRUE(ret.ok());
+
+    DeleteLicsRequest deleteReq;
+    DeleteLicsResponse deleteResp;
+    deleteReq.set_token(authResp.token());
+    deleteReq.set_licsnum(10);
+    deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+    deleteReq.mutable_algo()->set_type(TaskType::VIDEO);
+    deleteReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD);
+    ret =  deleteLics(&deleteReq, &deleteResp);
+    EXPECT_TRUE(ret.ok());
+
+  }
 
 };
 
@@ -200,7 +231,14 @@ TEST_F(LicsServerTests, KeepAliveShouldFail) {
 
 // performance tests
 TEST_F(LicsServerTests, 1000ClientCreateAndDelete10VideoLicsFor10Times) {
+  std::thread t[1000];
 
+  for (int idx = 0; idx < 1000; ++idx) {
+      t[idx] =  std::thread(&LicsServerTests::CreateAndDelete10OdLic, this);
+  }  
+  for (int idx = 0; idx < 1000; ++idx) {
+      t[idx].join();
+  }
 }
 
 TEST_F(LicsServerTests, 1000ClientCreateAndDelete10PictureLicsFor10Times) {
