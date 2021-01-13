@@ -182,7 +182,7 @@ LicsServer::LicsServer() {
     odLics->set_requestid(-1);
     odLics->set_totallics(0);
     odLics->set_usedlics(0);
-    odLics->set_maxlimit(0); // TODO: set by app
+    odLics->set_maxlimit(0); // TODO: set by conf
     licenseQ[UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD] = odLics;
 
     std::shared_ptr<AlgoLics> faceOaLics = std::make_shared<AlgoLics>();
@@ -351,7 +351,7 @@ void LicsServer::pushAlgosUsedLicToCloud(const std::map<long, std::shared_ptr<Al
 
 
 void LicsServer::updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remoteAlgosTotalLic) {
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
     for (const auto &remote : remoteAlgosTotalLic) {
         licenseQ[remote.first]->set_totallics(remote.second->totallics());
     }
@@ -414,8 +414,8 @@ bool LicsServer::gotExitSignal(std::shared_ptr<LicsServerEvent> t) {
     
 }
 
-void LicsServer::clearDeadClients() {
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+void LicsServer::serverClearDeadClients() {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
     long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
     for (auto client = clientQ.begin(); client != clientQ.end();) {
@@ -454,7 +454,7 @@ void LicsServer::doLoop() {
             // else update license cache about video
         }
 
-        clearDeadClients();
+        serverClearDeadClients();
 
         // TODO: call vcloud api to update license.
         std::map<long, std::shared_ptr<AlgoLics>> remoteAlgosTotalLic;
@@ -469,24 +469,25 @@ void LicsServer::doLoop() {
         
         // TODO: get interval from conf
     
+        // TODO: print all algorithm total and used.
 
     }
 }
 
 void LicsServer::licsQuery(long token, long algoID, int& total, int& used) {
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
     total = 0;
     used = 0;
     // add lock
     auto client = clientQ.find(token); // search client
     if (client == clientQ.end()) {
-        // TODO: add log print
+        SPDLOG_ERROR("client({0}) query license failed:no exist user", token);
         return ;
     }
 
     auto algo = licenseQ.find(algoID);
     if (algo == licenseQ.end()) {
-        // TODO: add log print
+        SPDLOG_ERROR("client({0}) query license failed:no exist algorithm id:{1}", token, algoID);
         return ;
     }
 
@@ -495,18 +496,23 @@ void LicsServer::licsQuery(long token, long algoID, int& total, int& used) {
     used = algo->second->usedlics();
 }
 
+int LicsServer::clientNum() {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
+    return clientQ.size();
+}
+
 int LicsServer::licsAlloc(long token, long algoID, int expected) {
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
     auto client = clientQ.find(token); // search client
     if (client == clientQ.end()) {
-        SPDLOG_WARN("no exist user token:{0}", token);
+        SPDLOG_ERROR("client({0}) alloc license failed:no exist user", token);
         return 0;
     }
 
     auto algo = licenseQ.find(algoID);
     if (algo == licenseQ.end()) {
-        SPDLOG_WARN("no exist algorithm id:{0}", algoID);
+        SPDLOG_ERROR("client({0}) alloc license failed:no exist algorithm id:{1}", token, algoID);
         return 0;
     }
 
@@ -523,17 +529,17 @@ int LicsServer::licsAlloc(long token, long algoID, int expected) {
 
 int LicsServer::licsFree(long token, long algoID, int expected) { 
 
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
     auto client = clientQ.find(token); // search client
     if (client == clientQ.end()) {
-        SPDLOG_WARN("no exist user token:{0}", token);
+        SPDLOG_ERROR("client({0}) free license failed:no exist user", token);
         return 0;
     }
 
     auto algo = licenseQ.find(algoID);
     if (algo == licenseQ.end()) {
-        SPDLOG_WARN("no exist algorithm id:{0}", algoID);
+        SPDLOG_ERROR("client({0}) free license failed:no exist algorithm id:{1}", token, algoID);
         return 0;
     }
 
@@ -569,7 +575,6 @@ Status LicsServer::createLics(const CreateLicsRequest* request, CreateLicsRespon
     response->mutable_algo()->set_type(request->algo().type());
     response->mutable_algo()->set_algorithmid(request->algo().algorithmid());
 
-    // TODO: add lock
     int licsNum = licsAlloc(clientToken, request->algo().algorithmid(), request->clientexpectedlicsnum());
     response->set_clientgetactuallicsnum(licsNum);
     response->set_respcode(ELICS_OK);
@@ -600,7 +605,6 @@ Status LicsServer::deleteLics(const DeleteLicsRequest* request, DeleteLicsRespon
     response->mutable_algo()->set_type(request->algo().type());
     response->mutable_algo()->set_algorithmid(request->algo().algorithmid());
 
-    // TODO: add lock
     int licsNum = licsFree(clientToken, request->algo().algorithmid(), request->licsnum());
     response->set_licsnum(licsNum);
     response->set_respcode(ELICS_OK);
@@ -622,7 +626,7 @@ Status LicsServer::queryLics(const QueryLicsRequest* request, QueryLicsResponse*
 }
 
 Status LicsServer::getAuthAccess(const GetAuthAccessRequest* request, GetAuthAccessResponse* response) {
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
     SPDLOG_DEBUG("client({0}) send auth access request: ip({1}), port({2})",
                 request->token(),
@@ -631,7 +635,6 @@ Status LicsServer::getAuthAccess(const GetAuthAccessRequest* request, GetAuthAcc
     long token = request->token(); // bug to be fixed:: make sure token is 64bits field.
 
     // TODO: check if token is exist or not, if exist then reallocted a token for client and print error
-    // TODO: add lock
     auto search = clientQ.find(token);
     if (search != clientQ.end()) {
         SPDLOG_INFO("find a same token client:{0}", token);
@@ -655,21 +658,27 @@ Status LicsServer::getAuthAccess(const GetAuthAccessRequest* request, GetAuthAcc
     return Status::OK;             
 }
 
+void LicsServer::clientTellServerStillAlive(long token) {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
+    auto client = clientQ.find(token);
+    if (client == clientQ.end()) {
+        SPDLOG_INFO("client({0}) not exist", token);
+        return;
+    }
+    // update client timestamp
+    client->second->UpdateTimestamp();
+    return;
+}
+
 Status LicsServer::keepAlive(const KeepAliveRequest* request, 
             KeepAliveResponse* response) {
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_license);
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
     // check if client exist
     long clientToken = request->token();
 
     response->set_token(clientToken);
 
-    // TODO: add lock
-    auto client = clientQ.find(clientToken);
-    if (client == clientQ.end()) {
-        response->set_respcode(ELICS_CLIENT_NOT_EXIST);
-        SPDLOG_INFO("keepalive failed: client({0}) not exist", clientToken);
-        return Status::OK;
-    }
+    clientTellServerStillAlive(clientToken);
 
     // TODO: allocte licence for picture
     std::string kp = "client({0}) lics: {1} \nvendor type algorithmID requestID totalLics usedLics clientMaxLimit\n";
@@ -690,8 +699,7 @@ Status LicsServer::keepAlive(const KeepAliveRequest* request,
     }
     SPDLOG_DEBUG(kp, clientToken, request->lics_size());
 
-    // update client timestamp
-    client->second->UpdateTimestamp();
+
 
     response->set_respcode(ELICS_OK);
     return Status::OK;             

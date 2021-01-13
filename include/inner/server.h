@@ -72,9 +72,9 @@ public:
     void ZeroHeartbeatTimeoutCnt();
 
 private:
-    long clientToken {-1};
-    long timestamp{0};
-    int continusKeepAliveFailedCnt {0};
+    std::atomic<long> clientToken {-1};
+    std::atomic<long> timestamp{0};
+    std::atomic<int> continusKeepAliveFailedCnt {0};
     std::map<long, std::shared_ptr<AlgoLics>> algo; // key is algorithm id
 };
 
@@ -112,7 +112,8 @@ private:
     void enqueue(std::shared_ptr<LicsServerEvent> t);
     bool empty();
     bool gotExitSignal(std::shared_ptr<LicsServerEvent> t);
-    void clearDeadClients();
+    void serverClearDeadClients();
+    void clientTellServerStillAlive(long token);
 
 protected:
     // inherited TEST-Class could call these functions
@@ -123,6 +124,7 @@ protected:
     Status keepAlive(const KeepAliveRequest* request, KeepAliveResponse* response);
 
     void licsQuery(long token, long algoID, int& total, int& used);
+    int clientNum();
 
     // test class will override the following methods.
     virtual void updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remote);
@@ -134,7 +136,7 @@ private:
     std::atomic<long> tokenBase_{0};// TODO:: lock contention
     std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
     std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
-    std::mutex exclusive_write_or_read_license; // used to prevent multiple thread read or write licenseQ and clientQ
+    std::mutex exclusive_write_or_read_server_license; // used to prevent multiple thread read or write licenseQ and clientQ
     std::atomic<bool> running_{true};
 
     std::list<std::shared_ptr<LicsServerEvent>> event_;
