@@ -5,6 +5,7 @@
 #define TEST_MAX_OA_LICS_NUM    (100000)
 #define TEST_MAX_OD_LICS_NUM    (100000)
 #define TEST_MAX_CLIENT_NUM   (1000)
+#define TEST_MAX_CLIENT_LIMIT   (500)
 
 #define TEST_10_LICS  (10)
 
@@ -13,7 +14,7 @@ class LicsServerTests : public testing::Test, public LicsServer {
     // should define it if you need to initialize the variables.
     // Otherwise, this can be skipped.
     void SetUp() override {
-
+      sleep(1);// make some time to get server ready for loading data.
     }
 
     // virtual void TearDown() will be called after each test is run.
@@ -107,16 +108,8 @@ TEST_F(LicsServerTests, AuthShouldOk) {
   EXPECT_GT(response.token(), 0);
 }
 
-TEST_F(LicsServerTests, AuthShouldFail) {
-  // You can access data in the test fixture here.
-  
-
-}
-
-
 TEST_F(LicsServerTests, CreateOdLicsShouldReturn10) {
 
-  sleep(1);// make some time to get server ready for loading data.
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
   Status ret = getAuthAccess(&authReq,  &authResp);
@@ -142,34 +135,41 @@ TEST_F(LicsServerTests, CreateOdLicsShouldReturn10) {
   
 }
 
-TEST_F(LicsServerTests, CreateOaLicsShouldReturn10) {
-  sleep(1);
+TEST_F(LicsServerTests, 1ClientFetchOaLics) {
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
   Status ret = getAuthAccess(&authReq,  &authResp);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(authResp.respcode(), ELICS_OK);
 
-  CreateLicsRequest req;
-  CreateLicsResponse resp;
+  KeepAliveRequest req;
+  KeepAliveResponse resp;
   req.set_token(authResp.token());
-  req.set_clientexpectedlicsnum(TEST_10_LICS);
-  req.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-  req.mutable_algo()->set_type(TaskType::PICTURE);
-  req.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
-  ret = createLics(&req, &resp);
+
+  // upload picture lics to server
+  for(int idx = 0; idx < 1; ++idx) { 
+      AlgoLics* lics = req.add_lics();
+      lics->set_requestid(0);
+      lics->set_totallics(0);
+      lics->set_usedlics(0);
+      lics->set_maxlimit(TEST_MAX_CLIENT_LIMIT);
+
+      lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+      lics->mutable_algo()->set_type(TaskType::PICTURE);
+      lics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
+  }
+  ret = keepAlive(&req, &resp);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(resp.respcode(), ELICS_OK);
-  EXPECT_EQ(resp.clientgetactuallicsnum(), TEST_10_LICS);
 
-  int total, used;
-  licsQuery(authResp.token(), UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA, total, used);
-  EXPECT_EQ(total, TEST_MAX_OD_LICS_NUM);
-  EXPECT_EQ(used, TEST_10_LICS);
+  for (int idx = 0; idx < resp.lics_size(); ++idx ) {
+      int algoID = resp.lics(idx).algo().algorithmid();
+      int total = resp.lics(idx).totallics();
+      EXPECT_EQ(total, TEST_MAX_CLIENT_LIMIT); 
+  }
 }
 
 TEST_F(LicsServerTests, DeleteOdLicsShouldReturnOk) {
-  sleep(1);
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
   Status ret = getAuthAccess(&authReq,  &authResp);
@@ -206,55 +206,37 @@ TEST_F(LicsServerTests, DeleteOdLicsShouldReturnOk) {
 
 }
 
-TEST_F(LicsServerTests, DeleteOaLicsShouldReturnOk) {
-  sleep(1);
+TEST_F(LicsServerTests,KeepAlive) {
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
   Status ret = getAuthAccess(&authReq,  &authResp);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(authResp.respcode(), ELICS_OK);
 
-  CreateLicsRequest createReq;
-  CreateLicsResponse createResp;
-  createReq.set_token(authResp.token());
-  createReq.set_clientexpectedlicsnum(TEST_10_LICS);
-  createReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-  createReq.mutable_algo()->set_type(TaskType::PICTURE);
-  createReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
-  ret = createLics(&createReq, &createResp);
+  KeepAliveRequest req;
+  KeepAliveResponse resp;
+  req.set_token(authResp.token());
+
+  // upload picture lics to server
+  for(int idx = 0; idx < 1; ++idx) { 
+      AlgoLics* lics = req.add_lics();
+      lics->set_requestid(0);
+      lics->set_totallics(0);
+      lics->set_usedlics(0);
+      lics->set_maxlimit(TEST_MAX_CLIENT_LIMIT);
+
+      lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+      lics->mutable_algo()->set_type(TaskType::PICTURE);
+      lics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
+  }
+  ret = keepAlive(&req, &resp);
   EXPECT_TRUE(ret.ok());
-  EXPECT_EQ(createResp.respcode(), ELICS_OK);
-  EXPECT_EQ(createResp.clientgetactuallicsnum(), TEST_10_LICS);
-
-  DeleteLicsRequest deleteReq;
-  DeleteLicsResponse deleteResp;
-  deleteReq.set_token(authResp.token());
-  deleteReq.set_licsnum(TEST_10_LICS);
-  deleteReq.mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
-  deleteReq.mutable_algo()->set_type(TaskType::PICTURE);
-  deleteReq.mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
-  ret =  deleteLics(&deleteReq, &deleteResp);
-  EXPECT_EQ(deleteResp.respcode(), ELICS_OK);
-  EXPECT_TRUE(ret.ok());
-  
-  int total, used;
-  licsQuery(authResp.token(), UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA, total, used);
-  EXPECT_EQ(total, TEST_MAX_OD_LICS_NUM);
-  EXPECT_EQ(used, 0);
-}
-
-TEST_F(LicsServerTests,KeepAliveShouldOk) {
-  //Status keepAlive(const KeepAliveRequest* request, KeepAliveResponse* response);
-}
-
-TEST_F(LicsServerTests, KeepAliveShouldFail) {
-
+  EXPECT_EQ(resp.respcode(), ELICS_OK);
 }
 
 // performance tests
 TEST_F(LicsServerTests, ShouldHave1000Clients) {
   std::thread t[TEST_MAX_CLIENT_NUM];
-  sleep(1);// make some time to get server ready for loading data.
 
   for (int tidx = 0; tidx < TEST_MAX_CLIENT_NUM; ++tidx) {
       t[tidx] =  std::thread(&LicsServerTests::Create10OdLic, this);
@@ -263,13 +245,12 @@ TEST_F(LicsServerTests, ShouldHave1000Clients) {
       t[tidx].join();
   }
 
-  EXPECT_EQ(clientNum(),TEST_MAX_CLIENT_NUM);
+  EXPECT_EQ(totalClientNum(),TEST_MAX_CLIENT_NUM);
 }
 
 TEST_F(LicsServerTests, 1000ClientCreate10VideoLics) {
 
   std::thread t[TEST_MAX_CLIENT_NUM];
-  sleep(1);// make some time to get server ready for loading data.
 
   for (int tidx = 0; tidx < TEST_MAX_CLIENT_NUM; ++tidx) {
       t[tidx] =  std::thread(&LicsServerTests::Create10OdLic, this);
@@ -280,7 +261,6 @@ TEST_F(LicsServerTests, 1000ClientCreate10VideoLics) {
 
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
-
   Status ret = getAuthAccess(&authReq,  &authResp);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(authResp.respcode(), ELICS_OK);
@@ -289,12 +269,12 @@ TEST_F(LicsServerTests, 1000ClientCreate10VideoLics) {
   licsQuery(authResp.token(), UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD, total, used);
   EXPECT_EQ(total, TEST_MAX_OD_LICS_NUM);
   EXPECT_EQ(used, TEST_MAX_CLIENT_NUM * TEST_10_LICS);
-  EXPECT_EQ(clientNum(),TEST_MAX_CLIENT_NUM + 1);
+  EXPECT_EQ(totalClientNum(),TEST_MAX_CLIENT_NUM + 1);
 
 }
+
 TEST_F(LicsServerTests, 1000ClientCreateAndDelete10VideoLicsFor10Times) {
 
-  sleep(1);// make some time to get server ready for loading data.
   int loopCnt = 10;
   for (int cnt = 0; cnt < loopCnt; ++cnt) {
       std::thread t[TEST_MAX_CLIENT_NUM];
@@ -320,13 +300,60 @@ TEST_F(LicsServerTests, 1000ClientCreateAndDelete10VideoLicsFor10Times) {
 
 }
 
-TEST_F(LicsServerTests, 1000ClientCreateAndDelete10PictureLicsFor10Times) {
+TEST_F(LicsServerTests, 1000ClientFetchOaLics) {
+  for (int clientIdx = 0; clientIdx < TEST_MAX_CLIENT_NUM; clientIdx++) {
+    GetAuthAccessRequest authReq;
+    GetAuthAccessResponse authResp;
+    Status ret = getAuthAccess(&authReq,  &authResp);
+    EXPECT_TRUE(ret.ok());
+    EXPECT_EQ(authResp.respcode(), ELICS_OK);
 
+    KeepAliveRequest req;
+    KeepAliveResponse resp;
+    req.set_token(authResp.token());
+
+    // upload picture lics to server
+    for(int idx = 0; idx < 1; ++idx) { 
+        AlgoLics* lics = req.add_lics();
+        lics->set_requestid(0);
+        lics->set_totallics(0);
+        lics->set_usedlics(0);
+        lics->set_maxlimit(TEST_MAX_CLIENT_LIMIT);
+
+        lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+        lics->mutable_algo()->set_type(TaskType::PICTURE);
+        lics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
+    }
+    ret = keepAlive(&req, &resp);
+    EXPECT_TRUE(ret.ok());
+    EXPECT_EQ(resp.respcode(), ELICS_OK);
+
+    for (int idx = 0; idx < resp.lics_size(); ++idx ) {
+        int algoID = resp.lics(idx).algo().algorithmid();
+        int licsNum = resp.lics(idx).totallics();
+
+        int benchMark = TEST_MAX_OA_LICS_NUM/(clientIdx+1) > TEST_MAX_CLIENT_LIMIT ? TEST_MAX_CLIENT_LIMIT :  TEST_MAX_OA_LICS_NUM/(clientIdx+1);
+        EXPECT_EQ(licsNum, benchMark); 
+    }
+  }
 }
 
-// data consistency and performance test
+TEST_F(LicsServerTests, MakeClientKeepAliveTimeout) {
+  GetAuthAccessRequest authReq;
+  GetAuthAccessResponse authResp;
+  Status ret = getAuthAccess(&authReq,  &authResp);
+  EXPECT_TRUE(ret.ok());
+  EXPECT_EQ(authResp.respcode(), ELICS_OK);
 
+  // 3*30s heatbeat-stop detect to make server clear the client.
+  std::cout <<"please wait 90s, testing....." << std::endl;
+  for (int idx = 0; idx < 3; ++idx) {
+    EXPECT_EQ(totalClientNum(),1);
+    sleep(40); 
+  }
 
+  EXPECT_EQ(totalClientNum(),0);
+}
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);

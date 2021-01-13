@@ -137,6 +137,15 @@ long Client::GetToken() {
     return clientToken;
 }
 
+bool Client::HaveAlgoID(long algoID) {
+    auto search = algo.find(algoID);
+    if (search == algo.end()) {
+        return true;
+    }
+
+    return false;
+}
+
 bool Client::Alive() {
 
     // TODO: read max keep alive from conf
@@ -447,6 +456,7 @@ void LicsServer::doLoop() {
         if (ev) {
             // TODO : send delete license request 
             if (gotExitSignal(ev)) {
+                SPDLOG_ERROR("got a signal to exit. bye");
                 return;
             }
 
@@ -496,9 +506,20 @@ void LicsServer::licsQuery(long token, long algoID, int& total, int& used) {
     used = algo->second->usedlics();
 }
 
-int LicsServer::clientNum() {
+int LicsServer::totalClientNum() {
     std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
     return clientQ.size();
+}
+
+int LicsServer::clientNumByAlgoID(long algoID) {
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
+    int num = 0;
+    for(auto client : clientQ) {
+        if (client.second->HaveAlgoID(algoID)) {
+            ++num;
+        }
+    }
+    return num;
 }
 
 int LicsServer::licsAlloc(long token, long algoID, int expected) {
@@ -513,6 +534,11 @@ int LicsServer::licsAlloc(long token, long algoID, int expected) {
     auto algo = licenseQ.find(algoID);
     if (algo == licenseQ.end()) {
         SPDLOG_ERROR("client({0}) alloc license failed:no exist algorithm id:{1}", token, algoID);
+        return 0;
+    }
+
+    if (algo->second->algo().type() != TaskType::VIDEO) {
+        SPDLOG_ERROR("incorrect call, only support VIDEO lics alloc:client({0}), algorithm id({1})", token, algoID);
         return 0;
     }
 
@@ -670,14 +696,9 @@ void LicsServer::clientTellServerStillAlive(long token) {
     return;
 }
 
-Status LicsServer::keepAlive(const KeepAliveRequest* request, 
-            KeepAliveResponse* response) {
-    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
-    // check if client exist
+Status LicsServer::keepAlive(const KeepAliveRequest* request, KeepAliveResponse* response) {
+
     long clientToken = request->token();
-
-    response->set_token(clientToken);
-
     clientTellServerStillAlive(clientToken);
 
     // TODO: allocte licence for picture
@@ -685,9 +706,16 @@ Status LicsServer::keepAlive(const KeepAliveRequest* request,
     for (int idx = 0; idx < request->lics_size(); ++idx ) {
         if (request->lics(idx).algo().type() == TaskType::PICTURE) {
             int clientMaxLimit = request->lics(idx).maxlimit();
+            long algoID = request->lics(idx).algo().algorithmid();
 
-            // TODO: allocate stragy
-            response->add_lics()->set_maxlimit(clientMaxLimit);
+            int clientNum = clientNumByAlgoID(algoID);
+            int totalLics = 0;
+            int usedLics = 0;
+            licsQuery(clientToken, algoID, totalLics,usedLics);
+            int average = clientNum > 0 ? (totalLics / clientNum) : totalLics;
+            int clientFetchLics = average > clientMaxLimit ? clientMaxLimit : average;
+
+            response->add_lics()->set_totallics(clientFetchLics);
         }
         kp += std::to_string(request->lics(idx).algo().vendor()) + "\t" + 
                 std::to_string(request->lics(idx).algo().type()) + "\t" +
@@ -698,9 +726,7 @@ Status LicsServer::keepAlive(const KeepAliveRequest* request,
                 std::to_string(request->lics(idx).maxlimit()) + "\n";
     }
     SPDLOG_DEBUG(kp, clientToken, request->lics_size());
-
-
-
+    response->set_token(clientToken);
     response->set_respcode(ELICS_OK);
     return Status::OK;             
 }

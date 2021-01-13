@@ -70,6 +70,7 @@ public:
     int HeartbeatTimeoutCnt();
     void IncHeartbeatTimeoutCnt();
     void ZeroHeartbeatTimeoutCnt();
+    bool HaveAlgoID(long algoID);
 
 private:
     std::atomic<long> clientToken {-1};
@@ -116,24 +117,24 @@ private:
     void clientTellServerStillAlive(long token);
 
 protected:
-    // inherited TEST-Class could call these functions
+    // TEST-Class call following functions to verify data correct.
     Status createLics(const CreateLicsRequest* request, CreateLicsResponse* response);
     Status deleteLics(const DeleteLicsRequest* request, DeleteLicsResponse* response);
     Status queryLics(const QueryLicsRequest* request, QueryLicsResponse* response);
     Status getAuthAccess(const GetAuthAccessRequest* request,  GetAuthAccessResponse* response);
     Status keepAlive(const KeepAliveRequest* request, KeepAliveResponse* response);
-
     void licsQuery(long token, long algoID, int& total, int& used);
-    int clientNum();
+    int totalClientNum();
+    int clientNumByAlgoID(long algoID);
 
-    // test class will override the following methods.
+    // TEST-Class will override the following methods.
     virtual void updateLocalLics(const std::map<long, std::shared_ptr<AlgoLics>>& remote);
     virtual void getLocalLics(std::map<long, std::shared_ptr<AlgoLics>>& local);
     virtual void pushAlgosUsedLicToCloud(const std::map<long, std::shared_ptr<AlgoLics>>& local);
     virtual void fetchAlgosTotalLicFromCloud(std::map<long, std::shared_ptr<AlgoLics>>& remote);
 
 private:
-    std::atomic<long> tokenBase_{0};// TODO:: lock contention
+    std::atomic<long> tokenBase_{0};
     std::map<long,std::shared_ptr<Client>> clientQ; // key is user token.
     std::map<long, std::shared_ptr<AlgoLics>> licenseQ; // key is algorithm id.
     std::mutex exclusive_write_or_read_server_license; // used to prevent multiple thread read or write licenseQ and clientQ
