@@ -304,6 +304,17 @@ TEST_F(LicsServerTests, 1000ClientFetchOaLics) {
   for (int clientIdx = 0; clientIdx < TEST_MAX_CLIENT_NUM; clientIdx++) {
     GetAuthAccessRequest authReq;
     GetAuthAccessResponse authResp;
+    for(int idx = 0; idx < 1; ++idx) { 
+      AlgoLics* lics = authReq.add_lics();
+      lics->set_requestid(0);
+      lics->set_totallics(0);
+      lics->set_usedlics(0);
+      lics->set_maxlimit(TEST_MAX_CLIENT_LIMIT);
+
+      lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+      lics->mutable_algo()->set_type(TaskType::PICTURE);
+      lics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
+  }
     Status ret = getAuthAccess(&authReq,  &authResp);
     EXPECT_TRUE(ret.ok());
     EXPECT_EQ(authResp.respcode(), ELICS_OK);
@@ -337,6 +348,8 @@ TEST_F(LicsServerTests, 1000ClientFetchOaLics) {
     }
   }
 }
+
+
 
 TEST_F(LicsServerTests, 500ClientCreateOdAnd500ClientFetchOaLics) {
 
@@ -352,6 +365,17 @@ TEST_F(LicsServerTests, 500ClientCreateOdAnd500ClientFetchOaLics) {
 
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
+      for(int idx = 0; idx < 1; ++idx) { 
+      AlgoLics* lics = authReq.add_lics();
+      lics->set_requestid(0);
+      lics->set_totallics(0);
+      lics->set_usedlics(0);
+      lics->set_maxlimit(TEST_MAX_CLIENT_LIMIT);
+
+      lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+      lics->mutable_algo()->set_type(TaskType::VIDEO);
+      lics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD);
+  }
   Status ret = getAuthAccess(&authReq,  &authResp);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(authResp.respcode(), ELICS_OK);
@@ -367,6 +391,17 @@ TEST_F(LicsServerTests, 500ClientCreateOdAnd500ClientFetchOaLics) {
   for (int clientIdx = 0; clientIdx < TEST_MAX_CLIENT_NUM / 2; clientIdx++) {
     GetAuthAccessRequest authReq;
     GetAuthAccessResponse authResp;
+        for(int idx = 0; idx < 1; ++idx) { 
+      AlgoLics* lics = authReq.add_lics();
+      lics->set_requestid(0);
+      lics->set_totallics(0);
+      lics->set_usedlics(0);
+      lics->set_maxlimit(TEST_MAX_CLIENT_LIMIT);
+
+      lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+      lics->mutable_algo()->set_type(TaskType::PICTURE);
+      lics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OA);
+  }
     Status ret = getAuthAccess(&authReq,  &authResp);
     EXPECT_TRUE(ret.ok());
     EXPECT_EQ(authResp.respcode(), ELICS_OK);
@@ -400,6 +435,7 @@ TEST_F(LicsServerTests, 500ClientCreateOdAnd500ClientFetchOaLics) {
     }
   }
 }
+
 
 TEST_F(LicsServerTests, MakeClientTimeout) {
   GetAuthAccessRequest authReq;
@@ -438,6 +474,7 @@ TEST_F(LicsServerTests, MakeClientTimeout) {
   EXPECT_EQ(total, TEST_MAX_OD_LICS_NUM);
   EXPECT_EQ(used, 0);
 }
+
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);

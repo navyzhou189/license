@@ -477,7 +477,7 @@ void LicsServer::serverClearDeadClients() {
 void LicsServer::print() {
     std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
-    SPDLOG_INFO("algo\t total\t used");
+    SPDLOG_INFO("algo\t total\t used (big picture)");
     for (auto& lics : licenseQ) {
         SPDLOG_INFO("{0}\t {1}\t {2}", lics.first, lics.second->totallics(), lics.second->usedlics());
     }
