@@ -14,6 +14,10 @@
 
 #define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
 
+#define SERVER_TIME_100_MS  (100)
+#define CLIENT_HEARTBEAT_DETECT_INTERVAL_SEC   (30)
+#define MAX_CLIENT_HEARTBEAT_LOST_CNT   (3)
+
 class ServerConf {
 public:
     ServerConf(const std::string& file) {
@@ -153,7 +157,7 @@ bool Client::HaveAlgoID(long algoID) {
 bool Client::Alive() {
 
     // TODO: read max keep alive from conf
-    if (continusKeepAliveFailedCnt > 3) {
+    if (continusKeepAliveFailedCnt >= MAX_CLIENT_HEARTBEAT_LOST_CNT) {
         return false;
     }
 
@@ -227,7 +231,7 @@ LicsServer::LicsServer() {
 LicsServer::~LicsServer() {
     running_ = false;
     sleep(1);
-    SPDLOG_ERROR("got exit, bye");
+    SPDLOG_ERROR("bye~");
     spdlog::shutdown();// exit log
 }
 
@@ -395,7 +399,7 @@ bool LicsServer::empty() {
 
 std::shared_ptr<LicsServerEvent> LicsServer::dequeue() {
     std::unique_lock<std::mutex> lk(exclusive_write_or_read_event);
-    if (cv_of_event_.wait_for(lk,std::chrono::milliseconds(100), [&]{return !empty();})) {
+    if (cv_of_event_.wait_for(lk,std::chrono::milliseconds(SERVER_TIME_100_MS), [&]{return !empty();})) {
 
         std::shared_ptr<LicsServerEvent> ev = std::move(event_.front());
         event_.pop_front();
@@ -433,16 +437,16 @@ void LicsServer::serverClearDeadClients() {
 
     std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
-    long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
+    long currentSysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
     for (auto clientIter = clientQ.begin(); clientIter != clientQ.end();) {
         // check if the client keep alive
         long token = clientIter->first;
         std::shared_ptr<Client> client(clientIter->second);
-        long clientTime = client->GetLatestTimestamp();
+        long clientLatestHeartbeatTime = client->GetLatestTimestamp();
         
-        long diff = sysTime >= clientTime ? sysTime - clientTime : 0; 
-        // TODO: get timeout from conf
-        if (diff > 30) {
+        long diff = currentSysTime >= clientLatestHeartbeatTime ? currentSysTime - clientLatestHeartbeatTime : 0; 
+        // TODO: read CLIENT_HEARTBEAT_DETECT_INTERVAL_SEC  from conf file.
+        if (diff > CLIENT_HEARTBEAT_DETECT_INTERVAL_SEC) {
             client->IncHeartbeatTimeoutCnt();
             SPDLOG_INFO("client({0}) hearbeat timeout reach {1}", token, client->HeartbeatTimeoutCnt());
         }
@@ -498,31 +502,36 @@ void LicsServer::print() {
 }
 
 void LicsServer::doLoop() {
-    while (running_) {
+    // when LicsServer start up, make it fetch license data as soon as possible.
+    std::map<long, std::shared_ptr<AlgoLics>> remoteAlgosTotalLic;
+    fetchAlgosTotalLicFromCloud(remoteAlgosTotalLic);
+    updateLocalLics(remoteAlgosTotalLic);
 
+    int every_30s_continue_do_next = 0;
+    while (running_) {
+        ++every_30s_continue_do_next;
+        
         std::shared_ptr<LicsServerEvent> ev = dequeue();
         if (ev) {
-            // TODO : send delete license request 
             if (gotExitSignal(ev)) {
-                SPDLOG_ERROR("got a signal to exit. bye");
+                SPDLOG_ERROR("got a signal to exit");
                 return;
             }
-
-            // TODO: if failed , push the event to queue.
-            // else update license cache about video
         }
+
+        // dequeue wake up every 100ms,make the follow code execute every 30s.
+        if (every_30s_continue_do_next < (CLIENT_HEARTBEAT_DETECT_INTERVAL_SEC * 1000) / SERVER_TIME_100_MS) {
+            continue;
+        }
+        every_30s_continue_do_next = 0;
 
         serverClearDeadClients();
 
-        // TODO: call vcloud api to update license.
-        std::map<long, std::shared_ptr<AlgoLics>> remoteAlgosTotalLic;
         fetchAlgosTotalLicFromCloud(remoteAlgosTotalLic);
-
         updateLocalLics(remoteAlgosTotalLic);
 
         std::map<long, std::shared_ptr<AlgoLics>> cacheAlgosUsedLic;
         getLocalLics(cacheAlgosUsedLic);
-
         pushAlgosUsedLicToCloud(cacheAlgosUsedLic);
         
         // TODO: get interval from conf
