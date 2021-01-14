@@ -160,7 +160,7 @@ bool Client::Alive() {
     return true;
 }
 
-void Client::AddUsedLics(long algoID, int num) {
+void Client::AddLics(long algoID, int num) {
     auto search = algo.find(algoID);
     if (search == algo.end()) {
         return;
@@ -168,9 +168,10 @@ void Client::AddUsedLics(long algoID, int num) {
 
     int used = search->second->usedlics();
     search->second->set_usedlics(used + num);
+    search->second->set_totallics(used + num);
 }
 
-void Client::DecUsedLics(long algoID, int num) {
+void Client::DecLics(long algoID, int num) {
     auto search = algo.find(algoID);
     if (search == algo.end()) {
         return;
@@ -178,6 +179,7 @@ void Client::DecUsedLics(long algoID, int num) {
 
     int used = search->second->usedlics();
     search->second->set_usedlics(used - num);
+    search->second->set_totallics(used - num);
 }
 
 LicsServer::LicsServer() {
@@ -428,66 +430,69 @@ bool LicsServer::gotExitSignal(std::shared_ptr<LicsServerEvent> t) {
 }
 
 void LicsServer::serverClearDeadClients() {
-    std::list<std::map<long, std::shared_ptr<AlgoLics>>> deadClients;
-    {
-        std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
-        long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
-        for (auto client = clientQ.begin(); client != clientQ.end();) {
-            // check if the client keep alive
-            long clientTime = client->second->GetLatestTimestamp();
-            
-            long diff = sysTime >= clientTime ? sysTime - clientTime : 0; // TODO: mark the client died if sysTime < clientTime.
-            // TODO: get timeout from conf
-            if (diff > 30) {
-                // make the continusKeepAliveFailedCnt plus plus
-                client->second->IncHeartbeatTimeoutCnt();
-                    SPDLOG_INFO("client({0}) hearbeat timeout reach {1}", client->first, client->second->HeartbeatTimeoutCnt());
-            }
+    std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
-            if (!client->second->Alive()) {
-                // TODO:delete client and release used lics
-                SPDLOG_INFO("detect heatbeat-stoped client. remove token:{0}", client->second->GetToken());
-                deadClients.push_back(std::move(client->second->Algos())); // TODO: move cstr.
-                client = clientQ.erase(client);
-            } else {
-                ++client;
+    long sysTime = GetTimeSecsFromEpoch();// prevent from mulitiple call in the loop
+    for (auto clientIter = clientQ.begin(); clientIter != clientQ.end();) {
+        // check if the client keep alive
+        long token = clientIter->first;
+        std::shared_ptr<Client> client(clientIter->second);
+        long clientTime = client->GetLatestTimestamp();
+        
+        long diff = sysTime >= clientTime ? sysTime - clientTime : 0; 
+        // TODO: get timeout from conf
+        if (diff > 30) {
+            client->IncHeartbeatTimeoutCnt();
+            SPDLOG_INFO("client({0}) hearbeat timeout reach {1}", token, client->HeartbeatTimeoutCnt());
+        }
+
+        if (!client->Alive()) {
+            std::map<long, std::shared_ptr<AlgoLics>> Lics = client->Algos();
+
+            for (auto& lic : Lics) {
+                long algoID = lic.first;
+                int clientUsedLics = lic.second->totallics();
+                auto algoInLicenseQ = licenseQ.find(algoID);
+                if (algoInLicenseQ != licenseQ.end()) {
+                    int usedLics = algoInLicenseQ->second->usedlics();
+                    algoInLicenseQ->second->set_usedlics(usedLics - clientUsedLics);
+                }
             }
+            SPDLOG_INFO("detect heatbeat-stoped client. remove token:{0}", token);
+            clientIter = clientQ.erase(clientIter);
+        } else {
+            ++clientIter;
         }
     }
-
-    for (auto& client : deadClients) {
-
-        for(auto& algo : client) {
-            long algoID = algo.first;
-            long token = algo.second->algo().algorithmid();
-            int deadClientUsedLics = 0;
-            if (algo.second->algo().type() == TaskType::VIDEO) {
-                deadClientUsedLics = algo.second->usedlics();
-                licsFree(token, algoID, deadClientUsedLics);
-            }else {
-                deadClientUsedLics = algo.second->usedlics();
-            }
-            
-        }
-    }
-
 }
 
 void LicsServer::print() {
     std::lock_guard<std::mutex> lk(exclusive_write_or_read_server_license);
 
-    SPDLOG_INFO("algo\t total\t used (big picture)");
+    std::string allLics("server licenses big picture\nalgo\t total\t used");
     for (auto& lics : licenseQ) {
-        SPDLOG_INFO("{0}\t {1}\t {2}", lics.first, lics.second->totallics(), lics.second->usedlics());
+        long algo = lics.first;
+        int total = lics.second->totallics();
+        int used = lics.second->usedlics();
+
+        allLics += "\n" + std::to_string(algo) + "\t " + std::to_string(total) + "\t " + std::to_string(used);
     }
+    SPDLOG_INFO(allLics);
 
     for (auto& c : clientQ) {
-        SPDLOG_INFO("algo\t total\t used\t client({0})", c.first);
+        long token = c.first;
+        std::string clientLics("client({0}) license\nalgo\t total\t used");
+        
         std::map<long, std::shared_ptr<AlgoLics>> algo = c.second->Algos();
         for (auto& a : algo) {
-            SPDLOG_INFO("{0}\t {1}\t used\t",a.first, a.second->totallics(), a.second->usedlics());
+            long algo = a.first;
+            int total = a.second->totallics();
+            int used = a.second->usedlics();
+
+            clientLics += "\n" + std::to_string(algo) + "\t " + std::to_string(total) + "\t " + std::to_string(used);
         }
+        SPDLOG_INFO(clientLics, token);
     }
     
 }
@@ -522,7 +527,6 @@ void LicsServer::doLoop() {
         
         // TODO: get interval from conf
     
-        // TODO: print all algorithm total and used.
         print();
     }
 }
@@ -591,7 +595,7 @@ int LicsServer::licsAlloc(long token, long algoID, int expected) {
 
     int actualAllocedLics = (total - used) >= expected ? expected : (total - used);
     algo->second->set_usedlics(used + actualAllocedLics);// update used licenses for algorithm
-    client->second->AddUsedLics(algoID, actualAllocedLics); // update used licenses for client
+    client->second->AddLics(algoID, actualAllocedLics); // update used licenses for client
 
     return actualAllocedLics;
 }
@@ -616,7 +620,7 @@ int LicsServer::licsFree(long token, long algoID, int expected) {
 
     int actualFreeLics = used >= expected ? expected : used;
     algo->second->set_usedlics(used - actualFreeLics);// update used licenses for algorithm
-    client->second->DecUsedLics(algoID, actualFreeLics); // update used licenses for client
+    client->second->DecLics(algoID, actualFreeLics); // update used licenses for client
 
     return actualFreeLics;
 }

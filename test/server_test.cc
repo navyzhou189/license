@@ -365,7 +365,7 @@ TEST_F(LicsServerTests, 500ClientCreateOdAnd500ClientFetchOaLics) {
 
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
-      for(int idx = 0; idx < 1; ++idx) { 
+  for(int idx = 0; idx < 1; ++idx) { 
       AlgoLics* lics = authReq.add_lics();
       lics->set_requestid(0);
       lics->set_totallics(0);
@@ -440,6 +440,17 @@ TEST_F(LicsServerTests, 500ClientCreateOdAnd500ClientFetchOaLics) {
 TEST_F(LicsServerTests, MakeClientTimeout) {
   GetAuthAccessRequest authReq;
   GetAuthAccessResponse authResp;
+  for(int idx = 0; idx < 1; ++idx) { 
+      AlgoLics* lics = authReq.add_lics();
+      lics->set_requestid(0);
+      lics->set_totallics(0);
+      lics->set_usedlics(0);
+      lics->set_maxlimit(TEST_MAX_CLIENT_LIMIT);
+
+      lics->mutable_algo()->set_vendor(Vendor::UNISINSIGHT);
+      lics->mutable_algo()->set_type(TaskType::VIDEO);
+      lics->mutable_algo()->set_algorithmid(UNIS_FACE_PERSON_VEHICLE_NONVEHICLE_OD);
+  }
   Status ret = getAuthAccess(&authReq,  &authResp);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(authResp.respcode(), ELICS_OK);

@@ -62,8 +62,8 @@ class Client {
 
 public:
     Client(long token, std::map<long, std::shared_ptr<AlgoLics>> algo);
-    void AddUsedLics(long algoID, int num);
-    void DecUsedLics(long algoID, int num);
+    void AddLics(long algoID, int num);
+    void DecLics(long algoID, int num);
     long GetToken();
     long GetLatestTimestamp();
     bool Alive();
