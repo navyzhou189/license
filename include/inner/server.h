@@ -12,6 +12,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <thread>
+#include <list>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
@@ -60,7 +61,7 @@ private:
 class Client {
 
 public:
-    Client(long token);
+    Client(long token, std::map<long, std::shared_ptr<AlgoLics>> algo);
     void AddUsedLics(long algoID, int num);
     void DecUsedLics(long algoID, int num);
     long GetToken();
@@ -71,11 +72,12 @@ public:
     void IncHeartbeatTimeoutCnt();
     void ZeroHeartbeatTimeoutCnt();
     bool HaveAlgoID(long algoID);
+    std::map<long, std::shared_ptr<AlgoLics>> Algos();
 
 private:
-    std::atomic<long> clientToken {-1};
-    std::atomic<long> timestamp{0};
-    std::atomic<int> continusKeepAliveFailedCnt {0};
+    long clientToken {-1};
+    long timestamp{0};
+    int continusKeepAliveFailedCnt {0};
     std::map<long, std::shared_ptr<AlgoLics>> algo; // key is algorithm id
 };
 
@@ -115,6 +117,8 @@ private:
     bool gotExitSignal(std::shared_ptr<LicsServerEvent> t);
     void serverClearDeadClients();
     void clientTellServerStillAlive(long token);
+
+    void print();
 
 protected:
     // TEST-Class call following functions to verify data correct.

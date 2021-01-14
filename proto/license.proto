@@ -80,6 +80,7 @@ message GetAuthAccessRequest {
 	otherwise filled up with  the value which get from  server
 	*/
 	int64 token = 3;
+	repeated AlgoLics lics =  4; // tell server which algorithms client have.
 }
 
 message GetAuthAccessResponse {
