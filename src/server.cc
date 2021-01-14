@@ -12,104 +12,10 @@
 #include "spdlog/cfg/env.h"
 #include "spdlog/sinks/rotating_file_sink.h"
 
-#define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
-
 #define SERVER_TIME_100_MS  (100)
 #define CLIENT_HEARTBEAT_DETECT_INTERVAL_SEC   (30)
 #define MAX_CLIENT_HEARTBEAT_LOST_CNT   (3)
 
-class ServerConf {
-public:
-    ServerConf(const std::string& file) {
-        std::string line;
-        std::ifstream confFile (file);
-        if (confFile.is_open())
-        {
-            while ( getline (confFile,line) )
-            {
-                parse(line);
-            }
-            confFile.close();
-        } else {
-            SPDLOG_ERROR("failed to open file:{0}", file);
-            abort();
-        }
-
-        confFile.close();
-    }
-
-    std::string GetItem(const std::string& key) {
-        auto search = conf_.find(key);
-        if (search != conf_.end()) {
-            return search->second;
-        }
-
-        return std::string("");
-    }
-
-private:
-    // trim all space and newline(\r\n or \r) characters
-    std::string trim(const std::string& str) {
-        std::string trimStr;
-
-        for (auto ch = str.begin(); ch != str.end(); ++ch) {
-            if ((*ch == '\r') || (*ch == '\n') || (*ch == ' ') ) {
-                continue;
-            }
-
-            trimStr.push_back(*ch);
-        }
-
-        return trimStr;
-    }
-
-    void parse(const std::string& line) {
-        std::string key;
-        std::string value;
-
-        size_t pos = line.find_first_of("=");
-        if (std::string::npos == pos) {
-            return;
-        }
-        key = trim(line.substr(0, pos)); // substr return a [pos, pos + count) substring
-        value = trim(line.substr(pos + 1, line.length()));
-
-        conf_[key] = value;
-
-        return;
-    }
-
-private:
-    std::map<std::string, std::string> conf_;
-
-};
-
-static std::mutex mtxOfLics;
-static std::shared_ptr<HttpClient> httpClientOfLics = nullptr;
-static std::shared_ptr<ServerConf> srvConfOfLics = nullptr;
-
-std::shared_ptr<HttpClient> getHttpClient() {
-    std::lock_guard<std::mutex> lk(mtxOfLics);
-    if (!httpClientOfLics) {
-        httpClientOfLics = std::make_shared<HttpClient>();
-    }
-
-    return httpClientOfLics;
-}
-
-std::shared_ptr<ServerConf> getServerConf() {
-    std::lock_guard<std::mutex> lk(mtxOfLics);
-    if (!srvConfOfLics) {
-        srvConfOfLics = std::make_shared<ServerConf>(SERVER_CONF_FILE);
-    }
-
-    return srvConfOfLics;
-}
-
-long GetTimeSecsFromEpoch() {
-    std::time_t result = std::time(nullptr);
-    return result;
-}
 
 Client::Client(long token, std::map<long, std::shared_ptr<AlgoLics>> a) : clientToken(token), algo(a) {
     timestamp = GetTimeSecsFromEpoch();

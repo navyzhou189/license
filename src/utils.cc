@@ -1,5 +1,5 @@
 
-#include "http.h"
+#include "utils.h"
 
 
 #include "spdlog/spdlog.h"
@@ -8,6 +8,7 @@
 #include "spdlog/sinks/rotating_file_sink.h"
 
 #include <stdlib.h>
+
 
 
 static size_t doCurlWriteCB(void *data, size_t size, size_t nmemb, void *userp) {
@@ -116,4 +117,90 @@ void HttpClient::closeConn() {
     
     *ppCurlHandle = nullptr;
     connOpened = false;
+}
+
+
+ServerConf::ServerConf(const std::string& file) {
+    std::string line;
+    std::ifstream confFile (file);
+    if (confFile.is_open())
+    {
+        while ( getline (confFile,line) )
+        {
+            parse(line);
+        }
+        confFile.close();
+    } else {
+        SPDLOG_ERROR("failed to open file:{0}", file);
+        abort();
+    }
+
+    confFile.close();
+}
+
+std::string ServerConf::GetItem(const std::string& key) {
+    auto search = conf_.find(key);
+    if (search != conf_.end()) {
+        return search->second;
+    }
+
+    return std::string("");
+}
+
+std::string ServerConf::trim(const std::string& str) {
+    std::string trimStr;
+
+    for (auto ch = str.begin(); ch != str.end(); ++ch) {
+        if ((*ch == '\r') || (*ch == '\n') || (*ch == ' ') ) {
+            continue;
+        }
+
+        trimStr.push_back(*ch);
+    }
+
+    return trimStr;
+}
+
+void ServerConf::parse(const std::string& line) {
+    std::string key;
+    std::string value;
+
+    size_t pos = line.find_first_of("=");
+    if (std::string::npos == pos) {
+        return;
+    }
+    key = trim(line.substr(0, pos)); // substr return a [pos, pos + count) substring
+    value = trim(line.substr(pos + 1, line.length()));
+
+    conf_[key] = value;
+
+    return;
+}
+
+static std::mutex mtxOfLics;
+static std::shared_ptr<HttpClient> httpClientOfLics = nullptr;
+static std::shared_ptr<ServerConf> srvConfOfLics = nullptr;
+
+std::shared_ptr<HttpClient> getHttpClient() {
+    std::lock_guard<std::mutex> lk(mtxOfLics);
+    if (!httpClientOfLics) {
+        httpClientOfLics = std::make_shared<HttpClient>();
+    }
+
+    return httpClientOfLics;
+}
+
+#define SERVER_CONF_FILE   ("/var/unis/license/server/conf/server.conf")
+std::shared_ptr<ServerConf> getServerConf() {
+    std::lock_guard<std::mutex> lk(mtxOfLics);
+    if (!srvConfOfLics) {
+        srvConfOfLics = std::make_shared<ServerConf>(SERVER_CONF_FILE);
+    }
+
+    return srvConfOfLics;
+}
+
+long GetTimeSecsFromEpoch() {
+    std::time_t result = std::time(nullptr);
+    return result;
 }

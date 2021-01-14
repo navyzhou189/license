@@ -74,32 +74,60 @@ set(_GRPC_GRPCPP gRPC::grpc++)
 set(LOGGER "spdlog::spdlog")
 set(GTEST "gtest")
 
-set(ClientTarget "ClientTest")
+set(ClientUnitTests "ClientTest")
 set(ClientTestMain "test/client_test.cc")
 set(ClientSrc "src/client.cc")
-add_executable(${ClientTarget} 
+add_executable(${ClientUnitTests} 
     ${ClientSrc} 
     ${ClientTestMain}
     ${license_proto_srcs} 
     ${license_grpc_srcs})
-target_link_libraries(${ClientTarget}
+target_link_libraries(${ClientUnitTests}
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF}
     ${LOGGER}
     ${GTEST})
 
+#set(ClientLib "unis_lic_client")
+#set(ClientSrc "src/client.cc")
+#add_library(${ClientLib} SHARED
+#    ${ClientSrc} 
+#    ${ClientTestMain}
+#    ${license_proto_srcs} 
+#    ${license_grpc_srcs})
+#target_link_libraries(${ClientLib}
+#    ${_REFLECTION}
+#    ${_GRPC_GRPCPP}
+#    ${_PROTOBUF_LIBPROTOBUF}
+#    ${LOGGER}
+#    ${GTEST})
 
-set(ServerTarget "ServerTest")
+set(ServerUnitTests "ServerTest")
 set(ServerTestMain "test/server_test.cc")
 set(ServerSrc "src/server.cc")
-set(HttpSrc "src/http.cc")
-add_executable(${ServerTarget} ${ServerSrc} 
+set(UtilsSrc "src/utils.cc")
+add_executable(${ServerUnitTests} ${ServerSrc} 
     ${ServerTestMain}
     ${license_proto_srcs} 
     ${license_grpc_srcs}
-    ${HttpSrc})
-target_link_libraries(${ServerTarget}
+    ${UtilsSrc})
+target_link_libraries(${ServerUnitTests}
+    ${_REFLECTION}
+    ${_GRPC_GRPCPP}
+    ${_PROTOBUF_LIBPROTOBUF}
+    ${LOGGER}
+    ${GTEST}
+    "/home/navychou/wins_remote/test/grpc/3rdparty/curl/build/lib/libcurl.so")
+
+set(Server "Server")
+set(ServerMain "src/server_main.cc")
+add_executable(${Server} ${ServerSrc} 
+    ${ServerMain}
+    ${license_proto_srcs} 
+    ${license_grpc_srcs}
+    ${UtilsSrc})
+target_link_libraries(${Server}
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     ${_PROTOBUF_LIBPROTOBUF}

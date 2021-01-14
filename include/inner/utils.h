@@ -1,8 +1,12 @@
-#ifndef LICENSE_HTTP_HH
-#define LICENSE_HTTP_HH
+#ifndef LICENSE_UTILS_HH
+#define LICENSE_UTILS_HH
 
 #include <string>
+#include <iostream>
+#include <fstream>
 #include <mutex>
+#include <map>
+#include <memory>
 #include <curl/curl.h>
 
 #define EHTTP_OK    (0)
@@ -35,6 +39,28 @@ private:
     std::mutex execlusive_op_protect;
 };
 
+class ServerConf {
+public:
+    ServerConf(const std::string& file);
+
+    std::string GetItem(const std::string& key);
+
+private:
+    // trim all space and newline(\r\n or \r) characters
+    std::string trim(const std::string& str);
+
+    void parse(const std::string& line);
+
+private:
+    std::map<std::string, std::string> conf_;
+
+};
+
+std::shared_ptr<HttpClient> getHttpClient();
+
+std::shared_ptr<ServerConf> getServerConf();
+
+long GetTimeSecsFromEpoch();
 
 
 #endif

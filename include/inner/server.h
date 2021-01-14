@@ -19,7 +19,7 @@
 
 #include "license.grpc.pb.h"
 #include "lics_error.h"
-#include "http.h"
+#include "utils.h"
 #include "lics_interface.h"
 
 
@@ -149,6 +149,7 @@ private:
     std::condition_variable cv_of_event_;
 };
 
+void RunServer();
 
 
 #endif
